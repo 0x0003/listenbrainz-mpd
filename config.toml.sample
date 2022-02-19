@@ -1,0 +1,17 @@
+# This is the configuration file for listenbrainz-mpd.
+
+# Your ListenBrainz user token. Obtain it from https://listenbrainz.org/profile/ and put it
+# between the quotes.
+listenbrainz_token = ""
+
+# This section configures how the application connects to your MPD server.
+#
+# If left empty or omitted entirely, the default will be connecting via TCP to 127.0.0.1 on port
+# 6600.
+[mpd]
+ip = "127.0.0.1"
+port = 6600 # If port is specified, ip must be specified as well
+# Alternatively, you can connect via a Unix socket at the given path. If this is specified, ip and
+# port must not be specified.
+# unix = "/run/user/1000/mpd"
+
