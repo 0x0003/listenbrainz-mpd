@@ -3,8 +3,15 @@
 use std::collections::HashMap;
 
 use mpd_client::{commands::responses::Song, Tag};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tracing::warn;
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct ValidateToken {
+    pub(crate) valid: bool,
+    #[serde(default)]
+    pub(crate) user_name: String,
+}
 
 #[derive(Debug, Serialize)]
 #[serde(tag = "listen_type", content = "payload")]

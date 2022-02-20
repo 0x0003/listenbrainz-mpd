@@ -9,6 +9,7 @@ use std::{
 };
 
 use anyhow::{bail, Context, Result};
+use api::ValidateToken;
 use mpd_client::{
     commands::{
         self,
@@ -40,6 +41,9 @@ const MAX_REQUIRED_LISTEN_TIME: Duration = Duration::from_secs(4 * 60);
 /// API URL to which listen records are submitted.
 const LISTENBRAINZ_SUBMISSION_URL: &str = "https://api.listenbrainz.org/1/submit-listens";
 
+/// API URL used to check if the login token is valid.
+const LISTENBRAINZ_TOKEN_CHECK_URL: &str = "https://api.listenbrainz.org/1/validate-token";
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -69,6 +73,22 @@ async fn start_http_actor(config: &Configuration) -> Result<UnboundedSender<Subm
         .default_headers(headers)
         .build()
         .unwrap();
+
+    // Check if the token is valid
+    let token_valid = client
+        .get(LISTENBRAINZ_TOKEN_CHECK_URL)
+        .send()
+        .await
+        .context("failed to check ListenBrainz token")?
+        .json::<ValidateToken>()
+        .await
+        .context("failed to check ListenBrainz token")?;
+
+    if token_valid.valid {
+        debug!(username = %token_valid.user_name, "user token is valid");
+    } else {
+        bail!("The ListenBrainz user token is invalid");
+    }
 
     let (tx, mut rx) = mpsc::unbounded_channel();
 
