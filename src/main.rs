@@ -212,12 +212,19 @@ async fn run(
         listen_submitted: false,
     };
 
-    if state.song.is_some() {
-        debug!(
-            song = song_url(state.song.as_ref()),
-            required_playtime = ?listen_required,
-            "starting with initial song"
-        );
+    // Send initial now_playing if we start while a song is playing
+    if let Some(song) = &state.song {
+        if state.play_state == PlayState::Playing {
+            debug!(
+                song = %song.url,
+                required_playtime = ?listen_required,
+                "starting with initial song"
+            );
+
+            if let Some(submission) = Submission::playing_now(song.clone()) {
+                http_actor.send(submission).expect("HTTP actor gone");
+            }
+        }
     }
 
     debug!("entering main loop");
@@ -238,7 +245,7 @@ async fn run(
                     }
                 }
 
-                handle_state_change(&mut state, &mpd_client).await?;
+                handle_state_change(&mut state, &mpd_client, http_actor.clone()).await?;
             }
             _ = &mut state.listen_finished, if state.should_poll() => {
                 handle_listen_complete(&mut state, http_actor.clone()).await;
@@ -249,7 +256,11 @@ async fn run(
     Ok(())
 }
 
-async fn handle_state_change(state: &mut State, mpd_client: &Client) -> Result<()> {
+async fn handle_state_change(
+    state: &mut State,
+    mpd_client: &Client,
+    http_actor: UnboundedSender<Submission>,
+) -> Result<()> {
     let (new_play_state, new_song) = get_status_and_song(mpd_client).await?;
 
     let same_song = state.song.as_ref().map(|s| &s.url) == new_song.as_ref().map(|s| &s.url);
@@ -292,6 +303,14 @@ async fn handle_state_change(state: &mut State, mpd_client: &Client) -> Result<(
         state.listen_required = required_playtime;
         state.listen_finished = Box::pin(sleep(required_playtime));
         state.listen_submitted = false;
+
+        if let Some(song) = &new_song {
+            if state.play_state == PlayState::Playing {
+                if let Some(submission) = Submission::playing_now(song.clone()) {
+                    http_actor.send(submission).expect("HTTP actor gone");
+                }
+            }
+        }
     }
 
     state.play_state = new_play_state;

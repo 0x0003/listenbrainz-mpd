@@ -11,63 +11,76 @@ use tracing::warn;
 pub(crate) enum Submission {
     #[serde(rename = "single")]
     Listen([Listen; 1]),
+    #[serde(rename = "playing_now")]
+    PlayingNow([PlayingNow; 1]),
 }
 
 impl Submission {
     pub(crate) fn listen(song: Song, timestamp: u64) -> Option<Submission> {
-        let mut tags = song.tags;
-
-        let artist_name = if let Some(a) = single_value(&mut tags, Tag::Artist) {
-            a
-        } else {
-            warn!("cannot submit track without artist tag");
-            return None;
-        };
-
-        let track_name = if let Some(a) = single_value(&mut tags, Tag::Title) {
-            a
-        } else {
-            warn!("cannot submit track without title tag");
-            return None;
-        };
-
-        let release_name = single_value(&mut tags, Tag::Album);
-
-        let additional_info = AdditionalInfo {
-            artist_mbids: tags.remove(&Tag::MusicBrainzArtistId).unwrap_or_default(),
-            release_mbid: single_value(&mut tags, Tag::MusicBrainzReleaseId),
-            recording_mbid: single_value(&mut tags, Tag::MusicBrainzRecordingId),
-            track_mbid: single_value(&mut tags, Tag::MusicBrainzTrackId),
-            work_mbids: tags.remove(&Tag::MusicBrainzWorkId).unwrap_or_default(),
-            tracknumber: single_value(&mut tags, Tag::Track),
-            tags: tags.remove(&Tag::Genre).unwrap_or_default(),
-            media_player: "MPD",
-            submission_client: env!("CARGO_PKG_NAME"),
-            submission_client_version: env!("CARGO_PKG_VERSION"),
-        };
-
-        let track_metadata = TrackMetadata {
-            artist_name,
-            track_name,
-            release_name,
-            additional_info,
-        };
-
-        let l = Listen {
+        Some(Submission::Listen([Listen {
             listened_at: timestamp,
-            track_metadata,
-        };
+            track_metadata: metadata_from_song(song)?,
+        }]))
+    }
 
-        Some(Submission::Listen([l]))
+    pub(crate) fn playing_now(song: Song) -> Option<Submission> {
+        Some(Submission::PlayingNow([PlayingNow {
+            track_metadata: metadata_from_song(song)?,
+        }]))
     }
 }
 
-fn single_value(tags: &mut HashMap<Tag, Vec<String>>, tag: Tag) -> Option<String> {
+fn metadata_from_song(song: Song) -> Option<TrackMetadata> {
+    let mut tags = song.tags;
+    let song = song.url.as_str();
+
+    let artist_name = if let Some(a) = single_value(&mut tags, Tag::Artist, song) {
+        a
+    } else {
+        warn!(song, "cannot submit track without artist tag");
+        return None;
+    };
+
+    let track_name = if let Some(a) = single_value(&mut tags, Tag::Title, song) {
+        a
+    } else {
+        warn!(song, "cannot submit track without title tag");
+        return None;
+    };
+
+    let release_name = single_value(&mut tags, Tag::Album, song);
+
+    let additional_info = AdditionalInfo {
+        artist_mbids: tags.remove(&Tag::MusicBrainzArtistId).unwrap_or_default(),
+        release_mbid: single_value(&mut tags, Tag::MusicBrainzReleaseId, song),
+        recording_mbid: single_value(&mut tags, Tag::MusicBrainzRecordingId, song),
+        track_mbid: single_value(&mut tags, Tag::MusicBrainzTrackId, song),
+        work_mbids: tags.remove(&Tag::MusicBrainzWorkId).unwrap_or_default(),
+        tracknumber: single_value(&mut tags, Tag::Track, song),
+        tags: tags.remove(&Tag::Genre).unwrap_or_default(),
+        media_player: "MPD",
+        submission_client: env!("CARGO_PKG_NAME"),
+        submission_client_version: env!("CARGO_PKG_VERSION"),
+    };
+
+    Some(TrackMetadata {
+        artist_name,
+        track_name,
+        release_name,
+        additional_info,
+    })
+}
+
+fn single_value(tags: &mut HashMap<Tag, Vec<String>>, tag: Tag, song: &str) -> Option<String> {
     if let Some(mut v) = tags.remove(&tag) {
         if v.is_empty() {
             return None;
         } else if v.len() > 1 {
-            warn!("multiple values for {:?}, only sending the first", tag);
+            warn!(
+                song,
+                ?tag,
+                "multiple values for tag, only sending the first"
+            );
         }
 
         Some(v.remove(0))
@@ -79,6 +92,11 @@ fn single_value(tags: &mut HashMap<Tag, Vec<String>>, tag: Tag) -> Option<String
 #[derive(Debug, Serialize)]
 pub(crate) struct Listen {
     listened_at: u64,
+    track_metadata: TrackMetadata,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct PlayingNow {
     track_metadata: TrackMetadata,
 }
 
