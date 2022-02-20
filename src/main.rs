@@ -71,7 +71,7 @@ async fn main() -> Result<()> {
 
 async fn start_http_actor(config: &Configuration) -> Result<UnboundedSender<Submission>> {
     if config.token.is_empty() {
-        bail!("The ListenBrainz user token is not set");
+        bail!("The ListenBrainz user token cannot be empty");
     }
 
     let mut headers = HeaderMap::new();
@@ -90,10 +90,10 @@ async fn start_http_actor(config: &Configuration) -> Result<UnboundedSender<Subm
         .get(LISTENBRAINZ_TOKEN_CHECK_URL)
         .send()
         .await
-        .context("failed to check ListenBrainz token")?
+        .context("Failed to check ListenBrainz token")?
         .json::<ValidateToken>()
         .await
-        .context("failed to check ListenBrainz token")?;
+        .context("Failed to check ListenBrainz token")?;
 
     if token_valid.valid {
         debug!(username = %token_valid.user_name, "user token is valid");
@@ -163,7 +163,7 @@ async fn connect(mpd_config: &config::Mpd) -> Result<(Client, StateChanges)> {
             .await
             .with_context(|| {
                 format!(
-                    "failed to connect via Unix socket at {}",
+                    "Failed to connect via Unix socket at {}",
                     mpd_config.address
                 )
             })
@@ -171,7 +171,7 @@ async fn connect(mpd_config: &config::Mpd) -> Result<(Client, StateChanges)> {
         // Otherwise assume it's an IP address/hostname
         connect_tcp(&mpd_config.address, password)
             .await
-            .with_context(|| format!("failed to connect via TCP to {}", mpd_config.address))
+            .with_context(|| format!("Failed to connect via TCP to {}", mpd_config.address))
     }
 }
 
@@ -180,7 +180,7 @@ async fn connect_tcp(address: &str, password: Option<&str>) -> Result<(Client, S
 
     let (address, port) = address.rsplit_once(':').unwrap_or((address, "6600"));
 
-    let port = port.parse().context("failed to parse port")?;
+    let port = port.parse().context("Failed to parse port")?;
 
     let socket = TcpStream::connect((address, port)).await?;
     Client::connect_with_password_opt(socket, password)

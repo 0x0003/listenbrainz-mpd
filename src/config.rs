@@ -8,10 +8,10 @@ pub(crate) fn load(path: &Path) -> Result<Configuration> {
     debug!(?path, "loading configuration file");
 
     let config = fs::read(path)
-        .with_context(|| format!("reading configuration file at {}", path.display()))?;
+        .with_context(|| format!("Failed to read configuration file at {}", path.display()))?;
 
     let mut config: Configuration = toml::from_slice(&config)
-        .with_context(|| format!("parsing configuration file at {}", path.display()))?;
+        .with_context(|| format!("Failed to parse configuration file at {}", path.display()))?;
 
     if config.mpd.address.is_empty() {
         bail!("MPD address cannot be empty");
