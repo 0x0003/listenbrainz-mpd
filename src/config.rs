@@ -7,7 +7,7 @@ use tracing::debug;
 pub(crate) fn load(path: &Path) -> Result<Configuration> {
     debug!(?path, "loading configuration file");
 
-    let config = fs::read("config.toml")
+    let config = fs::read(path)
         .with_context(|| format!("reading configuration file at {}", path.display()))?;
 
     let mut config: Configuration = toml::from_slice(&config)

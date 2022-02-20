@@ -2,8 +2,8 @@ mod api;
 mod config;
 
 use std::{
-    cmp,
-    path::Path,
+    cmp, env,
+    path::{Path, PathBuf},
     pin::Pin,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -50,7 +50,18 @@ async fn main() -> Result<()> {
         .with_env_filter(EnvFilter::from_env("LISTENBRAINZ_MPD_LOG"))
         .init();
 
-    let config = config::load(Path::new("./config.toml"))?;
+    // Get the configuration file path either from the first command line argument, or use the
+    // default configuration file location of the platform
+    let config_path = if let Some(p) = env::args_os().nth(1) {
+        PathBuf::from(p)
+    } else {
+        let mut p = dirs::config_dir().expect("no config directory on this platform");
+        p.push(env!("CARGO_PKG_NAME"));
+        p.push("config.toml");
+        p
+    };
+
+    let config = config::load(&config_path)?;
 
     let http_actor = start_http_actor(&config).await?;
     let (mpd_client, state_changes) = connect(&config.mpd).await?;
