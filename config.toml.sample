@@ -6,13 +6,12 @@ listenbrainz_token = ""
 
 # This section configures how the application connects to your MPD server.
 #
-# If left empty or omitted entirely, the default will be connecting via TCP to 127.0.0.1 on port
+# If left empty or omitted entirely, the default will be connecting via TCP to localhost on port
 # 6600 with no password.
 [mpd]
-ip = "127.0.0.1"
-port = 6600 # If port is specified, ip must be specified as well
-# Alternatively, you can connect via a Unix socket at the given path. If this is specified, ip and
-# port must not be specified.
-# unix = "/run/user/1000/mpd"
+# Specify the address at which the MPD server can be reached. This may be an IP address or a
+# hostname that will be resolved. If no port is specified, port 6600 is assumed.
+# If this value starts with a slash ("/"), it specifies the path to a Unix socket instead.
+address = "localhost:6600"
 # If your MPD server is password protected, set this field:
 # password = "foo"

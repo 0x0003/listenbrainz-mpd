@@ -3,7 +3,6 @@ mod config;
 
 use std::{
     cmp,
-    net::SocketAddr,
     path::Path,
     pin::Pin,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -32,7 +31,7 @@ use tracing::{debug, error, info, trace, warn};
 use tracing_subscriber::EnvFilter;
 
 use crate::api::Submission;
-use crate::config::{Configuration, MpdConnection};
+use crate::config::Configuration;
 
 /// The maximum time you have to listen to a song before it will count as a listen. Set to 4
 /// minutes as per the recommendations in the ListenBrainz documentation.
@@ -127,25 +126,32 @@ async fn start_http_actor(config: &Configuration) -> Result<UnboundedSender<Subm
 async fn connect(mpd_config: &config::Mpd) -> Result<(Client, StateChanges)> {
     let password = mpd_config.password.as_deref();
 
-    match &mpd_config.connection {
-        MpdConnection::Tcp { ip, port } => {
-            let address = SocketAddr::new(*ip, port.get());
-            connect_tcp(address, password)
-                .await
-                .with_context(|| format!("failed to connect to {}", address))
-        }
-        MpdConnection::UnixSocket { unix } => connect_unix(unix, password)
+    if mpd_config.address.starts_with('/') {
+        // If the address value starts with a slash, assume it's a path to a Unix socket
+        connect_unix(Path::new(&mpd_config.address), password)
             .await
-            .with_context(|| format!("failed to connect via Unix socket at {}", unix.display())),
+            .with_context(|| {
+                format!(
+                    "failed to connect via Unix socket at {}",
+                    mpd_config.address
+                )
+            })
+    } else {
+        // Otherwise assume it's an IP address/hostname
+        connect_tcp(&mpd_config.address, password)
+            .await
+            .with_context(|| format!("failed to connect via TCP to {}", mpd_config.address))
     }
 }
 
-async fn connect_tcp(
-    address: SocketAddr,
-    password: Option<&str>,
-) -> Result<(Client, StateChanges)> {
+async fn connect_tcp(address: &str, password: Option<&str>) -> Result<(Client, StateChanges)> {
     debug!(?address, "connecting via TCP");
-    let socket = TcpStream::connect(address).await?;
+
+    let (address, port) = address.rsplit_once(':').unwrap_or((address, "6600"));
+
+    let port = port.parse().context("failed to parse port")?;
+
+    let socket = TcpStream::connect((address, port)).await?;
     Client::connect_with_password_opt(socket, password)
         .await
         .map_err(Into::into)
