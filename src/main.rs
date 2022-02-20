@@ -35,7 +35,7 @@ use crate::config::Configuration;
 
 /// The maximum time you have to listen to a song before it will count as a listen. Set to 4
 /// minutes as per the recommendations in the ListenBrainz documentation.
-const MAX_REQUIRED_LISTEN_TIME: Duration = Duration::from_secs(20);
+const MAX_REQUIRED_LISTEN_TIME: Duration = Duration::from_secs(4 * 60);
 
 /// API URL to which listen records are submitted.
 const LISTENBRAINZ_SUBMISSION_URL: &str = "https://api.listenbrainz.org/1/submit-listens";
