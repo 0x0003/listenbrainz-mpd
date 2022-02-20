@@ -4,6 +4,7 @@ use std::{
     cmp,
     net::SocketAddr,
     path::Path,
+    pin::Pin,
     time::{Duration, Instant},
 };
 
@@ -19,7 +20,7 @@ use mpd_client::{
 use reqwest::header::{self, HeaderMap, HeaderValue};
 use tokio::{
     net::{TcpStream, UnixStream},
-    time::sleep,
+    time::{sleep, Sleep},
 };
 use tokio_stream::StreamExt;
 use tracing::{debug, error, info, trace, warn};
@@ -88,22 +89,58 @@ async fn connect_unix(path: &Path) -> Result<(Client, StateChanges)> {
     Client::connect(socket).await.map_err(Into::into)
 }
 
+#[derive(Debug)]
+struct State {
+    /// Current play state of the server.
+    play_state: PlayState,
+    /// The current playing song, if any.
+    song: Option<Song>,
+    /// The point in time at which the current listen segment was started. This is used to
+    /// calculate the real elapsed time when processing pauses/unpauses.
+    listen_started: Instant,
+    /// The required remaining time the current song needs to play before it will count as a
+    /// listen.
+    listen_required: Duration,
+    /// The future that completes when the required duration is reached.
+    listen_finished: Pin<Box<Sleep>>,
+    /// `true` if a listen record for the current song has already been submitted.
+    listen_submitted: bool,
+}
+
+impl State {
+    fn should_poll(&self) -> bool {
+        self.play_state == PlayState::Playing && !self.listen_submitted
+    }
+}
+
 async fn run(
     mpd_client: Client,
     mut state_changes: StateChanges,
-    _http_client: reqwest::Client,
+    http_client: reqwest::Client,
 ) -> Result<()> {
-    // Get initial state of MPD
-    let (mut state, mut current_song) = get_status_and_song(&mpd_client).await?;
+    // Setup initial state
+    let (play_state, song) = get_status_and_song(&mpd_client).await?;
 
-    let mut current_song_listen_started = Instant::now();
-    let mut current_song_listen_required = current_song
-        .as_ref()
-        .map_or(MAX_REQUIRED_LISTEN_TIME, required_time_for_song);
+    let listen_required = required_time_for_song(song.as_ref());
 
-    let mut current_song_listen_finished = Box::pin(sleep(current_song_listen_required));
+    let mut state = State {
+        play_state,
+        song,
+        listen_started: Instant::now(),
+        listen_required,
+        listen_finished: Box::pin(sleep(listen_required)),
+        listen_submitted: false,
+    };
 
-    let mut current_song_submitted = false;
+    if state.song.is_some() {
+        debug!(
+            song = song_url(state.song.as_ref()),
+            required_playtime = ?listen_required,
+            "starting with initial song"
+        );
+    }
+
+    debug!("entering main loop");
 
     loop {
         tokio::select! {
@@ -115,56 +152,79 @@ async fn run(
                         error!(error = ?e, "MPD error");
                         return Err(e.into());
                     }
-                    None => break,
-                }
-
-                let (new_state, new_song) = get_status_and_song(&mpd_client).await?;
-
-                trace!(old_state = ?state, ?new_state, "possible state change");
-
-                if is_same_song(&current_song, &new_song) {
-                    trace!("still the same song");
-
-                    if state != PlayState::Playing && new_state == PlayState::Playing {
-                        // Resumed from pause, update the listen start time
-                        trace!("resumed from pause or stop");
-                        current_song_listen_started = Instant::now();
-                        current_song_listen_finished = Box::pin(sleep(current_song_listen_required));
-                    } else if state == PlayState::Playing && new_state == PlayState::Paused {
-                        // Paused playing, subtract the elapsed time from the required listen
-                        // duration
-                        let played = current_song_listen_started.elapsed();
-                        let remaining = current_song_listen_required.saturating_sub(played);
-                        trace!(?played, ?remaining, "paused");
-                        current_song_listen_required = remaining;
-                    } else if state != PlayState::Stopped && new_state == PlayState::Stopped {
-                        // Stopped playing entirely. If the playback starts again with the same
-                        // song, count it as a new listen
-                        trace!("stopped");
-                        current_song_submitted = false;
-                        current_song_listen_required = new_song.as_ref().map_or(MAX_REQUIRED_LISTEN_TIME, required_time_for_song);
+                    None => {
+                        info!("MPD server closed connection; exiting");
+                        break;
                     }
-                } else {
-                    // The song changed
-                    debug!(old = ?song_url(&current_song), new = ?song_url(&new_song), "song changed");
-
-                    current_song_submitted = false;
-                    current_song_listen_started = Instant::now();
-                    current_song_listen_required = new_song.as_ref().map_or(MAX_REQUIRED_LISTEN_TIME, required_time_for_song);
-                    current_song_listen_finished = Box::pin(sleep(current_song_listen_required));
                 }
 
-                state = new_state;
-                current_song = new_song;
+                handle_state_change(&mut state, &mpd_client).await?;
             }
-            _ = &mut current_song_listen_finished, if state == PlayState::Playing && !current_song_submitted => {
-                info!(song = ?song_url(&current_song), "completed required listen duration, sending listen");
-                current_song_submitted = true;
+            _ = &mut state.listen_finished, if state.should_poll() => {
+                handle_listen_complete(&mut state, http_client.clone()).await;
             }
         }
     }
 
     Ok(())
+}
+
+async fn handle_state_change(state: &mut State, mpd_client: &Client) -> Result<()> {
+    let (new_play_state, new_song) = get_status_and_song(mpd_client).await?;
+
+    let same_song = state.song.as_ref().map(|s| &s.url) == new_song.as_ref().map(|s| &s.url);
+
+    if same_song && state.play_state == new_play_state {
+        // Nothing relevant changed. This happens e.g. when the status of the repeat or shuffle
+        // options is changed
+        trace!("nothing changed");
+    } else if same_song {
+        if state.play_state != PlayState::Playing && new_play_state == PlayState::Playing {
+            // Resumed from pause, update the listen start time
+            trace!("resumed from pause or stop");
+            state.listen_started = Instant::now();
+            state.listen_finished = Box::pin(sleep(state.listen_required));
+        } else if state.play_state == PlayState::Playing && new_play_state == PlayState::Paused {
+            // Paused playing, subtract the elapsed time from the required listen
+            // duration
+            let played = state.listen_started.elapsed();
+            let remaining = state.listen_required.saturating_sub(played);
+            trace!(?played, ?remaining, "paused");
+            state.listen_required = remaining;
+        } else if state.play_state != PlayState::Stopped && new_play_state == PlayState::Stopped {
+            // Stopped playing entirely. If the playback starts again with the same
+            // song, count it as a new listen
+            trace!("stopped");
+            state.listen_submitted = false;
+            state.listen_required = required_time_for_song(new_song.as_ref());
+        }
+    } else {
+        // The song changed
+        let required_playtime = required_time_for_song(new_song.as_ref());
+        debug!(
+            song = song_url(new_song.as_ref()),
+            ?required_playtime,
+            "song changed"
+        );
+
+        state.listen_started = Instant::now();
+        state.listen_required = required_playtime;
+        state.listen_finished = Box::pin(sleep(required_playtime));
+        state.listen_submitted = false;
+    }
+
+    state.play_state = new_play_state;
+    state.song = new_song;
+
+    Ok(())
+}
+
+async fn handle_listen_complete(state: &mut State, _http_client: reqwest::Client) {
+    info!(
+        song = song_url(state.song.as_ref()),
+        "submitting listen entry"
+    );
+    state.listen_submitted = true;
 }
 
 async fn get_status_and_song(client: &Client) -> Result<(PlayState, Option<Song>)> {
@@ -177,23 +237,23 @@ async fn get_status_and_song(client: &Client) -> Result<(PlayState, Option<Song>
 
 /// Calculate the required listen duration for the given song to count as a completed ListenBrainz
 /// listen.
-fn required_time_for_song(song: &Song) -> Duration {
-    let required_time = if let Some(song_duration) = song.duration {
-        // A song counts as listened if either half its duration or MAX_REQUIRED_LISTEN_TIME,
-        // whichever is lower, was listened to
-        cmp::min(song_duration / 2, MAX_REQUIRED_LISTEN_TIME)
+fn required_time_for_song(song: Option<&Song>) -> Duration {
+    let required_time = if let Some(song) = song {
+        if let Some(song_duration) = song.duration {
+            // A song counts as listened if either half its duration or MAX_REQUIRED_LISTEN_TIME,
+            // whichever is lower, was listened to
+            cmp::min(song_duration / 2, MAX_REQUIRED_LISTEN_TIME)
+        } else {
+            warn!("song with unknown duration, assuming 4 minutes listen time");
+            MAX_REQUIRED_LISTEN_TIME
+        }
     } else {
-        warn!("song with unknown duration, assuming 4 minutes listen time");
         MAX_REQUIRED_LISTEN_TIME
     };
 
     required_time
 }
 
-fn song_url(s: &Option<Song>) -> &str {
-    s.as_ref().map_or("<none>", |s| &*s.url)
-}
-
-fn is_same_song(a: &Option<Song>, b: &Option<Song>) -> bool {
-    song_url(a) == song_url(b)
+fn song_url(s: Option<&Song>) -> &str {
+    s.map_or("<none>", |s| &*s.url)
 }
