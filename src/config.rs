@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 use tracing::debug;
 
@@ -15,8 +15,16 @@ pub(crate) fn load(path: &Path) -> Result<Configuration> {
     let config = fs::read("config.toml")
         .with_context(|| format!("reading configuration file at {}", path.display()))?;
 
-    toml::from_slice(&config)
-        .with_context(|| format!("parsing configuration file at {}", path.display()))
+    let config: Configuration = toml::from_slice(&config)
+        .with_context(|| format!("parsing configuration file at {}", path.display()))?;
+
+    if let Some(pw) = &config.mpd.password {
+        if pw.is_empty() {
+            bail!("password cannot be empty");
+        }
+    }
+
+    Ok(config)
 }
 
 #[derive(Debug, Deserialize)]
@@ -29,6 +37,7 @@ pub(crate) struct Configuration {
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub(crate) struct Mpd {
+    pub(crate) password: Option<String>,
     #[serde(flatten)]
     pub(crate) connection: MpdConnection,
 }

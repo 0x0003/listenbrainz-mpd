@@ -125,29 +125,38 @@ async fn start_http_actor(config: &Configuration) -> Result<UnboundedSender<Subm
 }
 
 async fn connect(mpd_config: &config::Mpd) -> Result<(Client, StateChanges)> {
+    let password = mpd_config.password.as_deref();
+
     match &mpd_config.connection {
         MpdConnection::Tcp { ip, port } => {
             let address = SocketAddr::new(*ip, port.get());
-            connect_tcp(address)
+            connect_tcp(address, password)
                 .await
                 .with_context(|| format!("failed to connect to {}", address))
         }
-        MpdConnection::UnixSocket { unix } => connect_unix(unix)
+        MpdConnection::UnixSocket { unix } => connect_unix(unix, password)
             .await
             .with_context(|| format!("failed to connect via Unix socket at {}", unix.display())),
     }
 }
 
-async fn connect_tcp(address: SocketAddr) -> Result<(Client, StateChanges)> {
+async fn connect_tcp(
+    address: SocketAddr,
+    password: Option<&str>,
+) -> Result<(Client, StateChanges)> {
     debug!(?address, "connecting via TCP");
     let socket = TcpStream::connect(address).await?;
-    Client::connect(socket).await.map_err(Into::into)
+    Client::connect_with_password_opt(socket, password)
+        .await
+        .map_err(Into::into)
 }
 
-async fn connect_unix(path: &Path) -> Result<(Client, StateChanges)> {
+async fn connect_unix(path: &Path, password: Option<&str>) -> Result<(Client, StateChanges)> {
     debug!(?path, "connecting via Unix socket");
     let socket = UnixStream::connect(path).await?;
-    Client::connect(socket).await.map_err(Into::into)
+    Client::connect_with_password_opt(socket, password)
+        .await
+        .map_err(Into::into)
 }
 
 #[derive(Debug)]
