@@ -10,6 +10,7 @@ use std::{
 
 use anyhow::{bail, Context, Result};
 use api::ValidateToken;
+use clap::{command, Arg};
 use mpd_client::{
     commands::{
         self,
@@ -50,16 +51,20 @@ async fn main() -> Result<()> {
         .with_env_filter(EnvFilter::from_env("LISTENBRAINZ_MPD_LOG"))
         .init();
 
-    // Get the configuration file path either from the first command line argument, or use the
-    // default configuration file location of the platform
-    let config_path = if let Some(p) = env::args_os().nth(1) {
-        PathBuf::from(p)
-    } else {
-        let mut p = dirs::config_dir().expect("no config directory on this platform");
-        p.push(env!("CARGO_PKG_NAME"));
-        p.push("config.toml");
-        p
-    };
+    let args = command!()
+        .arg(
+            Arg::new("config")
+                .long("config")
+                .takes_value(true)
+                .allow_invalid_utf8(true)
+                .help("Path to the configuration file (instead of the default location)"),
+        )
+        .get_matches();
+
+    let config_path = args
+        .value_of_os("config")
+        .map(PathBuf::from)
+        .unwrap_or_else(config::default_path);
 
     let config = config::load(&config_path)?;
 

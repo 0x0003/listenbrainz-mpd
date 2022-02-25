@@ -1,8 +1,18 @@
-use std::{fs, path::Path};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 use tracing::debug;
+
+pub(crate) fn default_path() -> PathBuf {
+    let mut p = dirs::config_dir().expect("no config directory on this platform");
+    p.push(env!("CARGO_PKG_NAME"));
+    p.push("config.toml");
+    p
+}
 
 pub(crate) fn load(path: &Path) -> Result<Configuration> {
     debug!(?path, "loading configuration file");
