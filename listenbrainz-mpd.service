@@ -5,7 +5,7 @@ After=mpd.service
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/listenbrainz-mpd # Adjust this to the actual path of the binary if necessary
+ExecStart=/usr/bin/listenbrainz-mpd
 
 [Install]
 WantedBy=mpd.service
