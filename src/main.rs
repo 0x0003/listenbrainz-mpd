@@ -44,7 +44,7 @@ const LISTENBRAINZ_SUBMISSION_URL: &str = "https://api.listenbrainz.org/1/submit
 /// API URL used to check if the login token is valid.
 const LISTENBRAINZ_TOKEN_CHECK_URL: &str = "https://api.listenbrainz.org/1/validate-token";
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_env("LISTENBRAINZ_MPD_LOG"))
