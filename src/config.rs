@@ -7,6 +7,9 @@ use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 use tracing::debug;
 
+/// The default configuration file.
+pub(crate) const DEFAULT: &str = include_str!("../config.toml.sample");
+
 pub(crate) fn default_path() -> PathBuf {
     let mut p = dirs::config_dir().expect("no config directory on this platform");
     p.push(env!("CARGO_PKG_NAME"));

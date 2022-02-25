@@ -3,12 +3,14 @@ mod config;
 
 use std::{
     cmp, env,
+    fs::{self, File},
+    io::{ErrorKind, Write},
     path::{Path, PathBuf},
     pin::Pin,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Context, Error, Result};
 use api::ValidateToken;
 use clap::{command, Arg};
 use mpd_client::{
@@ -59,7 +61,52 @@ async fn main() -> Result<()> {
                 .allow_invalid_utf8(true)
                 .help("Path to the configuration file (instead of the default location)"),
         )
+        .arg(
+            Arg::new("create-default-config")
+                .long("create-default-config")
+                .exclusive(true)
+                .help("Create a configuration file in the default location and exit"),
+        )
         .get_matches();
+
+    if args.is_present("create-default-config") {
+        let path = config::default_path();
+
+        // Create directories if necessary
+        if let Some(p) = path.parent() {
+            fs::create_dir_all(p)
+                .with_context(|| format!("Failed to create directories: {}", p.display()))?;
+        }
+
+        // Create the actual config file and write the contents into it, but only if it does not
+        // already exist
+        match File::options().write(true).create_new(true).open(&path) {
+            Ok(mut f) => {
+                f.write_all(config::DEFAULT.as_bytes()).with_context(|| {
+                    format!(
+                        "Failed to write to the newly created configuration file at {}",
+                        path.display()
+                    )
+                })?;
+                f.flush()?;
+
+                println!(
+                    "Created new default configuration file at {}",
+                    path.display()
+                );
+                return Ok(());
+            }
+            Err(e) if e.kind() == ErrorKind::AlreadyExists => {
+                bail!("A configuration file already exists at {}", path.display());
+            }
+            Err(e) => {
+                return Err(Error::new(e).context(format!(
+                    "Failed to create default configuration file at {}",
+                    path.display()
+                )));
+            }
+        }
+    }
 
     let config_path = args
         .value_of_os("config")
