@@ -207,6 +207,10 @@ async fn start_http_actor(config: &Configuration) -> Result<UnboundedSender<Subm
 }
 
 async fn connect(mpd_config: &config::Mpd) -> Result<(Client, StateChanges)> {
+    if mpd_config.address.is_empty() {
+        bail!("MPD address cannot be empty");
+    }
+
     let password = mpd_config.password.as_deref();
 
     if mpd_config.address.starts_with('/') {

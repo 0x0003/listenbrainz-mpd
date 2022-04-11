@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use serde::Deserialize;
 use tracing::debug;
 
@@ -25,10 +25,6 @@ pub(crate) fn load(path: &Path) -> Result<Configuration> {
 
     let mut config: Configuration = toml::from_slice(&config)
         .with_context(|| format!("Failed to parse configuration file at {}", path.display()))?;
-
-    if config.mpd.address.is_empty() {
-        bail!("MPD address cannot be empty");
-    }
 
     if let Some(pw) = &config.mpd.password {
         if pw.is_empty() {
