@@ -7,15 +7,15 @@ use serde::{Deserialize, Serialize};
 use tracing::warn;
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct ValidateToken {
-    pub(crate) valid: bool,
+pub(super) struct ValidateToken {
+    pub(super) valid: bool,
     #[serde(default)]
-    pub(crate) user_name: String,
+    pub(super) user_name: String,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(tag = "listen_type", content = "payload")]
-pub(crate) enum Submission {
+pub(super) enum Submission {
     #[serde(rename = "single")]
     Listen([Listen; 1]),
     #[serde(rename = "playing_now")]
@@ -23,14 +23,14 @@ pub(crate) enum Submission {
 }
 
 impl Submission {
-    pub(crate) fn listen(song: Song, timestamp: u64) -> Option<Submission> {
+    pub(super) fn listen(song: Song, timestamp: u64) -> Option<Submission> {
         Some(Submission::Listen([Listen {
             listened_at: timestamp,
             track_metadata: metadata_from_song(song)?,
         }]))
     }
 
-    pub(crate) fn playing_now(song: Song) -> Option<Submission> {
+    pub(super) fn playing_now(song: Song) -> Option<Submission> {
         Some(Submission::PlayingNow([PlayingNow {
             track_metadata: metadata_from_song(song)?,
         }]))

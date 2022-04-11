@@ -1,5 +1,5 @@
-mod api;
 mod config;
+mod submission_actor;
 
 use std::{
     cmp, env,
@@ -11,7 +11,6 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error, Result};
-use api::ValidateToken;
 use clap::{command, Arg};
 use mpd_client::{
     commands::{
@@ -21,31 +20,19 @@ use mpd_client::{
     state_changes::StateChanges,
     Client, Subsystem,
 };
-use reqwest::{
-    header::{self, HeaderMap, HeaderValue},
-    StatusCode,
-};
 use tokio::{
     net::{TcpStream, UnixStream},
-    sync::mpsc::{self, UnboundedSender},
     time::{sleep, Sleep},
 };
 use tokio_stream::StreamExt;
 use tracing::{debug, error, info, trace, warn};
 use tracing_subscriber::EnvFilter;
 
-use crate::api::Submission;
-use crate::config::Configuration;
+use crate::submission_actor::SubmissionActor;
 
 /// The maximum time you have to listen to a song before it will count as a listen. Set to 4
 /// minutes as per the recommendations in the ListenBrainz documentation.
 const MAX_REQUIRED_LISTEN_TIME: Duration = Duration::from_secs(4 * 60);
-
-/// API URL to which listen records are submitted.
-const LISTENBRAINZ_SUBMISSION_URL: &str = "https://api.listenbrainz.org/1/submit-listens";
-
-/// API URL used to check if the login token is valid.
-const LISTENBRAINZ_TOKEN_CHECK_URL: &str = "https://api.listenbrainz.org/1/validate-token";
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
@@ -116,94 +103,9 @@ async fn main() -> Result<()> {
     let config = config::load(&config_path)?;
 
     let (mpd_client, state_changes) = connect(&config.mpd).await?;
-    let http_actor = start_http_actor(config).await?;
+    let http_actor = SubmissionActor::start(config).await?;
 
     run(mpd_client, state_changes, http_actor).await
-}
-
-async fn start_http_actor(config: Configuration) -> Result<UnboundedSender<Submission>> {
-    if config.token.is_empty() {
-        bail!("The ListenBrainz user token cannot be empty");
-    }
-
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        header::AUTHORIZATION,
-        HeaderValue::from_str(&format!("Token {}", config.token))?,
-    );
-
-    let client = reqwest::ClientBuilder::new()
-        .default_headers(headers)
-        .build()
-        .unwrap();
-
-    // Check if the token is valid
-    let token_valid = client
-        .get(LISTENBRAINZ_TOKEN_CHECK_URL)
-        .send()
-        .await
-        .context("Failed to check ListenBrainz token")?
-        .json::<ValidateToken>()
-        .await
-        .context("Failed to check ListenBrainz token")?;
-
-    if token_valid.valid {
-        debug!(username = %token_valid.user_name, "user token is valid");
-    } else {
-        bail!("The ListenBrainz user token is invalid");
-    }
-
-    let (tx, mut rx) = mpsc::unbounded_channel();
-
-    tokio::spawn(async move {
-        while let Some(submission) = rx.recv().await {
-            loop {
-                let response = client
-                    .post(LISTENBRAINZ_SUBMISSION_URL)
-                    .json(&submission)
-                    .send()
-                    .await;
-
-                match response {
-                    Err(e) => error!(error = ?e, "error sending ListenBrainz request"),
-                    Ok(response) => {
-                        match response.status() {
-                            s if s.is_success() => debug!("listen submitted successfully"),
-                            StatusCode::TOO_MANY_REQUESTS => {
-                                warn!("hit ListenBrainz API rate limit");
-
-                                // Extract wait duration from response header, or 10s fallback
-                                let wait = response
-                                    .headers()
-                                    .get("X-RateLimit-Reset-In")
-                                    .and_then(|v| v.to_str().ok())
-                                    .and_then(|v| v.parse::<u64>().ok())
-                                    .map_or(Duration::from_secs(10), Duration::from_secs);
-
-                                // read response body
-                                let _ = response.bytes().await;
-
-                                // Wait for requested duration
-                                sleep(wait).await;
-
-                                // Send request again
-                                continue;
-                            }
-                            s => error!(code = ?s, "unexpected status code"),
-                        }
-
-                        if let Err(e) = response.bytes().await {
-                            error!(error = ?e, "error reading ListenBrainz response");
-                        }
-                    }
-                }
-
-                break;
-            }
-        }
-    });
-
-    Ok(tx)
 }
 
 async fn connect(mpd_config: &config::Mpd) -> Result<(Client, StateChanges)> {
@@ -282,7 +184,7 @@ impl State {
 async fn run(
     mpd_client: Client,
     mut state_changes: StateChanges,
-    http_actor: UnboundedSender<Submission>,
+    http_actor: SubmissionActor,
 ) -> Result<()> {
     // Setup initial state
     let (play_state, song) = get_status_and_song(&mpd_client).await?;
@@ -307,10 +209,7 @@ async fn run(
                 required_playtime = ?listen_required,
                 "starting with initial song"
             );
-
-            if let Some(submission) = Submission::playing_now(song.clone()) {
-                http_actor.send(submission).expect("HTTP actor gone");
-            }
+            http_actor.now_playing(song.clone());
         }
     }
 
@@ -335,7 +234,7 @@ async fn run(
                 handle_state_change(&mut state, &mpd_client, http_actor.clone()).await?;
             }
             _ = &mut state.listen_finished, if state.should_poll() => {
-                handle_listen_complete(&mut state, http_actor.clone()).await;
+                handle_listen_complete(&mut state, http_actor.clone());
             }
         }
     }
@@ -346,7 +245,7 @@ async fn run(
 async fn handle_state_change(
     state: &mut State,
     mpd_client: &Client,
-    http_actor: UnboundedSender<Submission>,
+    http_actor: SubmissionActor,
 ) -> Result<()> {
     let (new_play_state, new_song) = get_status_and_song(mpd_client).await?;
 
@@ -393,9 +292,7 @@ async fn handle_state_change(
 
         if let Some(song) = &new_song {
             if state.play_state == PlayState::Playing {
-                if let Some(submission) = Submission::playing_now(song.clone()) {
-                    http_actor.send(submission).expect("HTTP actor gone");
-                }
+                http_actor.now_playing(song.clone());
             }
         }
     }
@@ -406,7 +303,7 @@ async fn handle_state_change(
     Ok(())
 }
 
-async fn handle_listen_complete(state: &mut State, http_actor: UnboundedSender<Submission>) {
+fn handle_listen_complete(state: &mut State, http_actor: SubmissionActor) {
     info!(
         song = song_url(state.song.as_ref()),
         "submitting listen entry"
@@ -415,15 +312,13 @@ async fn handle_listen_complete(state: &mut State, http_actor: UnboundedSender<S
 
     let song = state.song.clone().expect("no song to submit");
 
-    let listen_timestamp = state
+    let timestamp = state
         .listen_timestamp
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_secs();
 
-    if let Some(submission) = Submission::listen(song, listen_timestamp) {
-        http_actor.send(submission).expect("HTTP actor gone");
-    }
+    http_actor.listen(song, timestamp);
 }
 
 async fn get_status_and_song(client: &Client) -> Result<(PlayState, Option<Song>)> {
