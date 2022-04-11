@@ -54,7 +54,7 @@ impl SubmissionActor {
         }
 
         let (tx, rx) = mpsc::unbounded_channel();
-        tokio::spawn(run(http_client, rx));
+        tokio::spawn(run(http_client, configuration, rx));
 
         Ok(SubmissionActor { tx })
     }
@@ -109,19 +109,26 @@ impl ActorRequest {
         }
     }
 
-    fn into_submission(self) -> Option<api::Submission> {
+    fn into_submission(self, config: &Configuration) -> Option<api::Submission> {
         match self {
-            ActorRequest::NowPlaying { song } => api::Submission::playing_now(song),
-            ActorRequest::Listen { song, timestamp } => api::Submission::listen(song, timestamp),
+            ActorRequest::NowPlaying { song } => api::Submission::playing_now(config, song),
+            ActorRequest::Listen { song, timestamp } => {
+                api::Submission::listen(config, song, timestamp)
+            }
         }
     }
 }
 
-async fn run(http_client: Client, mut requests: UnboundedReceiver<ActorRequest>) {
+async fn run(
+    http_client: Client,
+    configuration: Configuration,
+    mut requests: UnboundedReceiver<ActorRequest>,
+) {
     while let Some(request) = requests.recv().await {
         let span = info_span!("submission", song = %request.song(), kind = %request.kind());
 
-        let submission = if let Some(s) = span.in_scope(|| request.into_submission()) {
+        let submission = if let Some(s) = span.in_scope(|| request.into_submission(&configuration))
+        {
             s
         } else {
             continue;

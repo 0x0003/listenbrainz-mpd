@@ -6,6 +6,14 @@ use mpd_client::{commands::responses::Song, Tag};
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
+use crate::config::Configuration;
+
+/// Maximum number of tags the ListenBrainz server will accept.
+const MAX_TAGS: usize = 50;
+
+/// Maximum length of a single tag the ListenBrainz server will accept.
+const MAX_SINGLE_TAG_LENGTH: usize = 64;
+
 #[derive(Debug, Deserialize)]
 pub(super) struct ValidateToken {
     pub(super) valid: bool,
@@ -23,21 +31,21 @@ pub(super) enum Submission {
 }
 
 impl Submission {
-    pub(super) fn listen(song: Song, timestamp: u64) -> Option<Submission> {
+    pub(super) fn listen(config: &Configuration, song: Song, timestamp: u64) -> Option<Submission> {
         Some(Submission::Listen([Listen {
             listened_at: timestamp,
-            track_metadata: metadata_from_song(song)?,
+            track_metadata: metadata_from_song(config, song)?,
         }]))
     }
 
-    pub(super) fn playing_now(song: Song) -> Option<Submission> {
+    pub(super) fn playing_now(config: &Configuration, song: Song) -> Option<Submission> {
         Some(Submission::PlayingNow([PlayingNow {
-            track_metadata: metadata_from_song(song)?,
+            track_metadata: metadata_from_song(config, song)?,
         }]))
     }
 }
 
-fn metadata_from_song(song: Song) -> Option<TrackMetadata> {
+fn metadata_from_song(config: &Configuration, song: Song) -> Option<TrackMetadata> {
     let mut tags = song.tags;
     let song = song.url.as_str();
 
@@ -64,7 +72,11 @@ fn metadata_from_song(song: Song) -> Option<TrackMetadata> {
         track_mbid: single_value(&mut tags, Tag::MusicBrainzTrackId, song),
         work_mbids: tags.remove(&Tag::MusicBrainzWorkId).unwrap_or_default(),
         tracknumber: single_value(&mut tags, Tag::Track, song),
-        tags: tags.remove(&Tag::Genre).unwrap_or_default(),
+        tags: if config.submission.genres_as_folksonomy {
+            folksonomy_tags(&mut tags, config.submission.genre_separator)
+        } else {
+            Vec::new()
+        },
         media_player: "MPD",
         submission_client: env!("CARGO_PKG_NAME"),
         submission_client_version: env!("CARGO_PKG_VERSION"),
@@ -94,6 +106,49 @@ fn single_value(tags: &mut HashMap<Tag, Vec<String>>, tag: Tag, song: &str) -> O
     } else {
         None
     }
+}
+
+fn folksonomy_tags(
+    tags: &mut HashMap<Tag, Vec<String>>,
+    value_separator: Option<char>,
+) -> Vec<String> {
+    let genres = tags.remove(&Tag::Genre).unwrap_or_default();
+
+    let mut out = if let Some(value_separator) = value_separator {
+        let mut out = Vec::with_capacity(genres.len());
+
+        for v in genres {
+            out.extend(v.split(value_separator).map(str::trim).map(String::from));
+        }
+
+        if out.len() > MAX_TAGS {
+            warn!(tags = out.len(), "too many tags, ignoring excess values");
+            out.truncate(MAX_TAGS);
+        }
+
+        out
+    } else {
+        genres
+    };
+
+    out.retain(|tag| {
+        if tag.len() < MAX_SINGLE_TAG_LENGTH {
+            true
+        } else {
+            warn!(?tag, "oversized folksonomy tag, ignoring");
+            false
+        }
+    });
+
+    if out.len() > MAX_TAGS {
+        warn!(
+            tags = out.len(),
+            "too many folksonomy tags, ignoring excess values"
+        );
+        out.truncate(MAX_TAGS);
+    }
+
+    out
 }
 
 #[derive(Debug, Serialize)]

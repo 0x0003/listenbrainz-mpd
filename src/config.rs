@@ -41,6 +41,8 @@ pub(crate) struct Configuration {
     pub(crate) token: String,
     #[serde(default)]
     pub(crate) mpd: Mpd,
+    #[serde(default)]
+    pub(crate) submission: Submission,
 }
 
 #[derive(Debug, Deserialize)]
@@ -55,6 +57,22 @@ impl Default for Mpd {
         Mpd {
             address: String::from("127.0.0.1:6600"),
             password: None,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(default)]
+pub(crate) struct Submission {
+    pub(crate) genres_as_folksonomy: bool,
+    pub(crate) genre_separator: Option<char>,
+}
+
+impl Default for Submission {
+    fn default() -> Self {
+        Submission {
+            genres_as_folksonomy: true,
+            genre_separator: None,
         }
     }
 }
