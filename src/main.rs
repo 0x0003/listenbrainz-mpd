@@ -115,13 +115,13 @@ async fn main() -> Result<()> {
 
     let config = config::load(&config_path)?;
 
-    let http_actor = start_http_actor(&config).await?;
     let (mpd_client, state_changes) = connect(&config.mpd).await?;
+    let http_actor = start_http_actor(config).await?;
 
     run(mpd_client, state_changes, http_actor).await
 }
 
-async fn start_http_actor(config: &Configuration) -> Result<UnboundedSender<Submission>> {
+async fn start_http_actor(config: Configuration) -> Result<UnboundedSender<Submission>> {
     if config.token.is_empty() {
         bail!("The ListenBrainz user token cannot be empty");
     }
