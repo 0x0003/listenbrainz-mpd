@@ -226,8 +226,8 @@ async fn run(
                         return Err(e.into());
                     }
                     None => {
-                        info!("MPD server closed connection; exiting");
-                        break;
+                        error!("MPD server closed connection");
+                        bail!("MPD server closed connection");
                     }
                 }
 
@@ -238,8 +238,6 @@ async fn run(
             }
         }
     }
-
-    Ok(())
 }
 
 async fn handle_state_change(
