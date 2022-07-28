@@ -4,6 +4,10 @@
 # between the quotes.
 listenbrainz_token = ""
 
+# Base URL of the submission API. Change this if you want to use a different provider than
+# listenbrainz.org.
+# api_url = "https://api.listenbrainz.org"
+
 # This section configures how the application connects to your MPD server.
 #
 # If left empty or omitted entirely, the default will be connecting via TCP to localhost on port

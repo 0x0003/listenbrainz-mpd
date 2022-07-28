@@ -39,10 +39,16 @@ pub(crate) fn load(path: &Path) -> Result<Configuration> {
 pub(crate) struct Configuration {
     #[serde(rename = "listenbrainz_token")]
     pub(crate) token: String,
+    #[serde(default = "default_api_url")]
+    pub(crate) api_url: String,
     #[serde(default)]
     pub(crate) mpd: Mpd,
     #[serde(default)]
     pub(crate) submission: Submission,
+}
+
+fn default_api_url() -> String {
+    String::from("https://api.listenbrainz.org")
 }
 
 #[derive(Debug, Deserialize)]

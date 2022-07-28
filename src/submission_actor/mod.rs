@@ -20,10 +20,26 @@ use self::api::ValidateToken;
 use crate::config::Configuration;
 
 /// API URL to which listen records are submitted.
-const LISTENBRAINZ_SUBMISSION_URL: &str = "https://api.listenbrainz.org/1/submit-listens";
+const LISTENBRAINZ_SUBMISSION_URL: &str = "/1/submit-listens";
 
 /// API URL used to check if the login token is valid.
-const LISTENBRAINZ_TOKEN_CHECK_URL: &str = "https://api.listenbrainz.org/1/validate-token";
+const LISTENBRAINZ_TOKEN_CHECK_URL: &str = "/1/validate-token";
+
+/// Build a URL from the given base and path segment.
+fn build_url(base: &str, url: &str) -> String {
+    let url = if base.ends_with('/') && url.starts_with('/') {
+        // Overlapping slashes
+        &url[1..]
+    } else {
+        url
+    };
+
+    let mut out = String::with_capacity(base.len() + url.len());
+    out.push_str(base);
+    out.push_str(url);
+
+    out
+}
 
 /// Central actor that handles HTTP requests.
 #[derive(Clone)]
@@ -39,7 +55,10 @@ impl SubmissionActor {
         // Check if the configured login token is actually valid
         debug!("checking login token");
         let token_valid = http_client
-            .get(LISTENBRAINZ_TOKEN_CHECK_URL)
+            .get(build_url(
+                &configuration.api_url,
+                LISTENBRAINZ_TOKEN_CHECK_URL,
+            ))
             .send()
             .await
             .context("Failed to check ListenBrainz token")?
@@ -134,7 +153,7 @@ async fn run(
             continue;
         };
 
-        if let Err(error) = submit(http_client.clone(), &submission)
+        if let Err(error) = submit(http_client.clone(), &configuration, &submission)
             .instrument(span.clone())
             .await
         {
@@ -143,11 +162,18 @@ async fn run(
     }
 }
 
-async fn submit(http_client: Client, payload: &api::Submission) -> Result<()> {
+async fn submit(
+    http_client: Client,
+    configuration: &Configuration,
+    payload: &api::Submission,
+) -> Result<()> {
     // Inner loop to allow retrying the request on rate limit
     loop {
         let response = http_client
-            .post(LISTENBRAINZ_SUBMISSION_URL)
+            .post(build_url(
+                &configuration.api_url,
+                LISTENBRAINZ_SUBMISSION_URL,
+            ))
             .json(payload)
             .send()
             .await
