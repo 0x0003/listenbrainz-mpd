@@ -47,6 +47,7 @@ impl Submission {
 
 fn metadata_from_song(config: &Configuration, song: Song) -> Option<TrackMetadata> {
     let mut tags = song.tags;
+    let duration = song.duration;
     let song = song.url.as_str();
 
     let artist_name = if let Some(a) = single_value(&mut tags, Tag::Artist, song) {
@@ -72,6 +73,7 @@ fn metadata_from_song(config: &Configuration, song: Song) -> Option<TrackMetadat
         track_mbid: single_value(&mut tags, Tag::MusicBrainzTrackId, song),
         work_mbids: tags.remove(&Tag::MusicBrainzWorkId).unwrap_or_default(),
         tracknumber: single_value(&mut tags, Tag::Track, song),
+        duration_ms: duration.map(|d| d.as_millis()),
         tags: if config.submission.genres_as_folksonomy {
             folksonomy_tags(&mut tags, config.submission.genre_separator)
         } else {
@@ -185,6 +187,8 @@ struct AdditionalInfo {
     work_mbids: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tracknumber: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    duration_ms: Option<u128>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     tags: Vec<String>,
     media_player: &'static str,
