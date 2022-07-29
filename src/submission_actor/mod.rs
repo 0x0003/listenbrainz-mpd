@@ -4,7 +4,7 @@ mod api;
 
 use std::time::Duration;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use mpd_client::commands::responses::Song;
 use reqwest::{
     header::{self, HeaderMap, HeaderValue},
@@ -14,9 +14,9 @@ use tokio::{
     sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
     time::sleep,
 };
-use tracing::{debug, error, info_span, trace, warn, Instrument};
+use tracing::{debug, error, info_span, trace, warn, Instrument, Span};
 
-use self::api::ValidateToken;
+use self::api::{Submission, ValidateToken};
 use crate::config::Configuration;
 
 /// API URL to which listen records are submitted.
@@ -153,56 +153,83 @@ async fn run(
             continue;
         };
 
-        if let Err(error) = submit(http_client.clone(), &configuration, &submission)
-            .instrument(span.clone())
-            .await
-        {
-            error!(parent: &span, ?error, "failed ListenBrainz submission");
-        }
+        submit(http_client.clone(), &configuration, span, submission);
     }
 }
 
-async fn submit(
-    http_client: Client,
-    configuration: &Configuration,
-    payload: &api::Submission,
-) -> Result<()> {
-    // Inner loop to allow retrying the request on rate limit
-    loop {
-        let response = http_client
-            .post(build_url(
-                &configuration.api_url,
-                LISTENBRAINZ_SUBMISSION_URL,
-            ))
-            .json(payload)
-            .send()
-            .await
-            .context("error sending ListenBrainz submission request")?;
+fn submit(http_client: Client, configuration: &Configuration, span: Span, submission: Submission) {
+    let url = build_url(&configuration.api_url, LISTENBRAINZ_SUBMISSION_URL);
 
-        let status_code = response.status();
-        let retry_after = response
-            .headers()
-            .get("X-RateLimit-Reset-In")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.parse::<u64>().ok())
-            .map_or(Duration::from_secs(10), Duration::from_secs);
-        let response_body = response
-            .bytes()
-            .await
-            .context("error reading response body")?;
-        trace!(?status_code, ?response_body);
-
-        match status_code {
-            StatusCode::OK => break,
-            StatusCode::TOO_MANY_REQUESTS => {
-                warn!(?retry_after, "hit ListenBrainz API rate limit");
-                sleep(retry_after).await;
+    tokio::spawn(
+        async move {
+            let mut attempt = 1;
+            loop {
+                match do_submit(&http_client, &url, &submission).await {
+                    Ok(()) => {
+                        debug!("submission accepted");
+                        break;
+                    }
+                    Err(SubmitError::RateLimit { retry_after }) => {
+                        warn!(?retry_after, "hit API rate limit");
+                        sleep(retry_after).await;
+                    }
+                    Err(SubmitError::Error(e)) => {
+                        error!(attempt, error = ?e, "server error while submitting");
+                        if attempt <= 5 {
+                            sleep(Duration::from_secs(5) * attempt).await;
+                            attempt += 1;
+                            debug!("retrying");
+                        } else {
+                            error!("giving up on submission");
+                            break;
+                        }
+                    }
+                }
             }
-            other_status => bail!("unexpected status code ({:?})", other_status),
         }
+        .instrument(span),
+    );
+}
+
+enum SubmitError {
+    RateLimit { retry_after: Duration },
+    Error(anyhow::Error),
+}
+
+impl From<anyhow::Error> for SubmitError {
+    fn from(e: anyhow::Error) -> Self {
+        SubmitError::Error(e)
     }
+}
 
-    debug!("submission accepted");
+async fn do_submit(
+    http_client: &Client,
+    url: &str,
+    submission: &Submission,
+) -> Result<(), SubmitError> {
+    let response = http_client
+        .post(url)
+        .json(submission)
+        .send()
+        .await
+        .context("error sending ListenBrainz submission request")?;
 
-    Ok(())
+    let status_code = response.status();
+    let retry_after = response
+        .headers()
+        .get("X-RateLimit-Reset-In")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok())
+        .map_or(Duration::from_secs(10), Duration::from_secs);
+    let response_body = response
+        .bytes()
+        .await
+        .context("error reading response body")?;
+    trace!(?status_code, ?response_body);
+
+    match status_code {
+        StatusCode::OK => Ok(()),
+        StatusCode::TOO_MANY_REQUESTS => Err(SubmitError::RateLimit { retry_after }),
+        other_status => Err(anyhow!("unexpected status code ({:?})", other_status).into()),
+    }
 }
