@@ -43,13 +43,13 @@ fn build_url(base: &str, url: &str) -> String {
 
 /// Central actor that handles HTTP requests.
 #[derive(Clone)]
-pub(crate) struct SubmissionActor {
+pub struct SubmissionActor {
     tx: UnboundedSender<ActorRequest>,
 }
 
 impl SubmissionActor {
     /// Start the submission actor.
-    pub(crate) async fn start(configuration: Configuration) -> Result<SubmissionActor> {
+    pub async fn start(configuration: Configuration) -> Result<SubmissionActor> {
         let http_client = build_http_client(&configuration);
 
         // Check if the configured login token is actually valid
@@ -79,14 +79,14 @@ impl SubmissionActor {
     }
 
     /// Submit a "Now Playing" event.
-    pub(crate) fn now_playing(&self, song: Song) {
+    pub fn now_playing(&self, song: Song) {
         self.tx
             .send(ActorRequest::NowPlaying { song })
             .expect("actor gone");
     }
 
     /// Submit a completed listen.
-    pub(crate) fn listen(&self, song: Song, timestamp: u64) {
+    pub fn listen(&self, song: Song, timestamp: u64) {
         self.tx
             .send(ActorRequest::Listen { song, timestamp })
             .expect("actor gone");

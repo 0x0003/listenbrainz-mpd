@@ -1,23 +1,28 @@
 use std::{
-    fs,
-    path::{Path, PathBuf},
+    fs::{self, File},
+    io::{ErrorKind, Write},
+    path::PathBuf,
 };
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Error, Result};
 use serde::Deserialize;
 use tracing::debug;
 
-/// The default configuration file.
-pub(crate) const DEFAULT: &str = include_str!("../config.toml.sample");
+use crate::CliArgs;
 
-pub(crate) fn default_path() -> PathBuf {
+/// The default configuration file.
+pub const DEFAULT: &[u8] = include_str!("../config.toml.sample").as_bytes();
+
+fn default_path() -> PathBuf {
     let mut p = dirs::config_dir().expect("no config directory on this platform");
     p.push(env!("CARGO_PKG_NAME"));
     p.push("config.toml");
     p
 }
 
-pub(crate) fn load(path: &Path) -> Result<Configuration> {
+pub fn load(args: CliArgs) -> Result<Configuration> {
+    let path = &args.config.unwrap_or_else(default_path);
+
     debug!(?path, "loading configuration file");
 
     let config = fs::read(path)
@@ -30,6 +35,14 @@ pub(crate) fn load(path: &Path) -> Result<Configuration> {
         bail!("ListenBrainz user token cannot be empty");
     }
 
+    if config.api_url.is_empty() {
+        bail!("API URL cannot be empty");
+    }
+
+    if config.mpd.address.is_empty() {
+        bail!("MPD address cannot be empty");
+    }
+
     if let Some(pw) = &config.mpd.password {
         if pw.is_empty() {
             config.mpd.password = None;
@@ -39,16 +52,54 @@ pub(crate) fn load(path: &Path) -> Result<Configuration> {
     Ok(config)
 }
 
+pub fn create_default_config() -> Result<()> {
+    let path = default_path();
+
+    // Create directories if necessary
+    if let Some(p) = path.parent() {
+        fs::create_dir_all(p)
+            .with_context(|| format!("Failed to create directories: {}", p.display()))?;
+    }
+
+    // Create the actual config file and write the contents into it, but only if it does not
+    // already exist
+    match File::options().write(true).create_new(true).open(&path) {
+        Ok(mut f) => {
+            f.write_all(DEFAULT).with_context(|| {
+                format!(
+                    "Failed to write to the newly created configuration file at {}",
+                    path.display()
+                )
+            })?;
+            f.flush()?;
+
+            println!(
+                "Created new default configuration file at {}",
+                path.display()
+            );
+            Ok(())
+        }
+        Err(e) if e.kind() == ErrorKind::AlreadyExists => Err(anyhow!(
+            "A configuration file already exists at {}",
+            path.display()
+        )),
+        Err(e) => Err(Error::new(e).context(format!(
+            "Failed to create default configuration file at {}",
+            path.display()
+        ))),
+    }
+}
+
 #[derive(Debug, Deserialize)]
-pub(crate) struct Configuration {
+pub struct Configuration {
     #[serde(rename = "listenbrainz_token")]
-    pub(crate) token: String,
+    pub token: String,
     #[serde(default = "default_api_url")]
-    pub(crate) api_url: String,
+    pub api_url: String,
     #[serde(default)]
-    pub(crate) mpd: Mpd,
+    pub mpd: Mpd,
     #[serde(default)]
-    pub(crate) submission: Submission,
+    pub submission: Submission,
 }
 
 fn default_api_url() -> String {
@@ -57,9 +108,9 @@ fn default_api_url() -> String {
 
 #[derive(Debug, Deserialize)]
 #[serde(default)]
-pub(crate) struct Mpd {
-    pub(crate) address: String,
-    pub(crate) password: Option<String>,
+pub struct Mpd {
+    pub address: String,
+    pub password: Option<String>,
 }
 
 impl Default for Mpd {
@@ -73,9 +124,9 @@ impl Default for Mpd {
 
 #[derive(Debug, Deserialize)]
 #[serde(default)]
-pub(crate) struct Submission {
-    pub(crate) genres_as_folksonomy: bool,
-    pub(crate) genre_separator: Option<char>,
+pub struct Submission {
+    pub genres_as_folksonomy: bool,
+    pub genre_separator: Option<char>,
 }
 
 impl Default for Submission {

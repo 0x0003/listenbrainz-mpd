@@ -154,13 +154,13 @@ fn folksonomy_tags(
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct Listen {
+pub struct Listen {
     listened_at: u64,
     track_metadata: TrackMetadata,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct PlayingNow {
+pub struct PlayingNow {
     track_metadata: TrackMetadata,
 }
 

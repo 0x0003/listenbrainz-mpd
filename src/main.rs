@@ -2,16 +2,14 @@ mod config;
 mod submission_actor;
 
 use std::{
-    cmp, env,
-    fs::{self, File},
-    io::{ErrorKind, Write},
+    cmp,
     path::{Path, PathBuf},
     pin::Pin,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use anyhow::{anyhow, bail, Context, Error, Result};
-use clap::{command, Arg};
+use anyhow::{bail, Context, Result};
+use clap::{ArgAction, Parser};
 use mpd_client::{
     commands::{
         self,
@@ -40,32 +38,13 @@ async fn main() -> Result<()> {
         .with_env_filter(EnvFilter::from_env("LISTENBRAINZ_MPD_LOG"))
         .init();
 
-    let args = command!()
-        .arg(
-            Arg::new("config")
-                .long("config")
-                .takes_value(true)
-                .allow_invalid_utf8(true)
-                .help("Path to the configuration file (instead of the default location)"),
-        )
-        .arg(
-            Arg::new("create-default-config")
-                .long("create-default-config")
-                .exclusive(true)
-                .help("Create a configuration file in the default location and exit"),
-        )
-        .get_matches();
+    let args = CliArgs::parse();
 
-    if args.is_present("create-default-config") {
-        return create_default_config();
+    if args.create_default_config {
+        return config::create_default_config();
     }
 
-    let config_path = args
-        .value_of_os("config")
-        .map(PathBuf::from)
-        .unwrap_or_else(config::default_path);
-
-    let config = config::load(&config_path)?;
+    let config = config::load(args)?;
 
     let (mpd_client, state_changes) = connect(&config.mpd).await?;
     let http_actor = SubmissionActor::start(config).await?;
@@ -73,49 +52,18 @@ async fn main() -> Result<()> {
     run(mpd_client, state_changes, http_actor).await
 }
 
-fn create_default_config() -> Result<()> {
-    let path = config::default_path();
-
-    // Create directories if necessary
-    if let Some(p) = path.parent() {
-        fs::create_dir_all(p)
-            .with_context(|| format!("Failed to create directories: {}", p.display()))?;
-    }
-
-    // Create the actual config file and write the contents into it, but only if it does not
-    // already exist
-    match File::options().write(true).create_new(true).open(&path) {
-        Ok(mut f) => {
-            f.write_all(config::DEFAULT.as_bytes()).with_context(|| {
-                format!(
-                    "Failed to write to the newly created configuration file at {}",
-                    path.display()
-                )
-            })?;
-            f.flush()?;
-
-            println!(
-                "Created new default configuration file at {}",
-                path.display()
-            );
-            Ok(())
-        }
-        Err(e) if e.kind() == ErrorKind::AlreadyExists => Err(anyhow!(
-            "A configuration file already exists at {}",
-            path.display()
-        )),
-        Err(e) => Err(Error::new(e).context(format!(
-            "Failed to create default configuration file at {}",
-            path.display()
-        ))),
-    }
+#[derive(Parser)]
+#[clap(version, about)]
+pub struct CliArgs {
+    /// Path to the configuration file.
+    #[clap(short, long)]
+    config: Option<PathBuf>,
+    /// Create a configuration file in the default location and exit
+    #[clap(long, action = ArgAction::SetTrue, exclusive = true)]
+    create_default_config: bool,
 }
 
 async fn connect(mpd_config: &config::Mpd) -> Result<(Client, StateChanges)> {
-    if mpd_config.address.is_empty() {
-        bail!("MPD address cannot be empty");
-    }
-
     let password = mpd_config.password.as_deref();
 
     if mpd_config.address.starts_with('/') {
