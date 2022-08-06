@@ -10,7 +10,7 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use anyhow::{bail, Context, Error, Result};
+use anyhow::{anyhow, bail, Context, Error, Result};
 use clap::{command, Arg};
 use mpd_client::{
     commands::{
@@ -57,42 +57,7 @@ async fn main() -> Result<()> {
         .get_matches();
 
     if args.is_present("create-default-config") {
-        let path = config::default_path();
-
-        // Create directories if necessary
-        if let Some(p) = path.parent() {
-            fs::create_dir_all(p)
-                .with_context(|| format!("Failed to create directories: {}", p.display()))?;
-        }
-
-        // Create the actual config file and write the contents into it, but only if it does not
-        // already exist
-        match File::options().write(true).create_new(true).open(&path) {
-            Ok(mut f) => {
-                f.write_all(config::DEFAULT.as_bytes()).with_context(|| {
-                    format!(
-                        "Failed to write to the newly created configuration file at {}",
-                        path.display()
-                    )
-                })?;
-                f.flush()?;
-
-                println!(
-                    "Created new default configuration file at {}",
-                    path.display()
-                );
-                return Ok(());
-            }
-            Err(e) if e.kind() == ErrorKind::AlreadyExists => {
-                bail!("A configuration file already exists at {}", path.display());
-            }
-            Err(e) => {
-                return Err(Error::new(e).context(format!(
-                    "Failed to create default configuration file at {}",
-                    path.display()
-                )));
-            }
-        }
+        return create_default_config();
     }
 
     let config_path = args
@@ -106,6 +71,44 @@ async fn main() -> Result<()> {
     let http_actor = SubmissionActor::start(config).await?;
 
     run(mpd_client, state_changes, http_actor).await
+}
+
+fn create_default_config() -> Result<()> {
+    let path = config::default_path();
+
+    // Create directories if necessary
+    if let Some(p) = path.parent() {
+        fs::create_dir_all(p)
+            .with_context(|| format!("Failed to create directories: {}", p.display()))?;
+    }
+
+    // Create the actual config file and write the contents into it, but only if it does not
+    // already exist
+    match File::options().write(true).create_new(true).open(&path) {
+        Ok(mut f) => {
+            f.write_all(config::DEFAULT.as_bytes()).with_context(|| {
+                format!(
+                    "Failed to write to the newly created configuration file at {}",
+                    path.display()
+                )
+            })?;
+            f.flush()?;
+
+            println!(
+                "Created new default configuration file at {}",
+                path.display()
+            );
+            Ok(())
+        }
+        Err(e) if e.kind() == ErrorKind::AlreadyExists => Err(anyhow!(
+            "A configuration file already exists at {}",
+            path.display()
+        )),
+        Err(e) => Err(Error::new(e).context(format!(
+            "Failed to create default configuration file at {}",
+            path.display()
+        ))),
+    }
 }
 
 async fn connect(mpd_config: &config::Mpd) -> Result<(Client, StateChanges)> {
