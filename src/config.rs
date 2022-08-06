@@ -31,11 +31,17 @@ pub fn load(args: CliArgs) -> Result<Configuration> {
     let mut config: Configuration = toml::from_slice(&config)
         .with_context(|| format!("Failed to parse configuration file at {}", path.display()))?;
 
-    if config.token.is_empty() {
-        bail!("ListenBrainz user token cannot be empty");
+    validate(&mut config).context("Invalid configuration")?;
+
+    Ok(config)
+}
+
+fn validate(config: &mut Configuration) -> Result<()> {
+    if config.submission.token.is_empty() {
+        bail!("User token cannot be empty");
     }
 
-    if config.api_url.is_empty() {
+    if config.submission.api_url.is_empty() {
         bail!("API URL cannot be empty");
     }
 
@@ -49,7 +55,7 @@ pub fn load(args: CliArgs) -> Result<Configuration> {
         }
     }
 
-    Ok(config)
+    Ok(())
 }
 
 pub fn create_default_config() -> Result<()> {
@@ -92,18 +98,28 @@ pub fn create_default_config() -> Result<()> {
 
 #[derive(Debug, Deserialize)]
 pub struct Configuration {
-    #[serde(rename = "listenbrainz_token")]
+    pub submission: Submission,
+    #[serde(default)]
+    pub mpd: Mpd,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Submission {
     pub token: String,
     #[serde(default = "default_api_url")]
     pub api_url: String,
+    #[serde(default = "genres_as_folksonomy")]
+    pub genres_as_folksonomy: bool,
     #[serde(default)]
-    pub mpd: Mpd,
-    #[serde(default)]
-    pub submission: Submission,
+    pub genre_separator: Option<char>,
 }
 
 fn default_api_url() -> String {
     String::from("https://api.listenbrainz.org")
+}
+
+fn genres_as_folksonomy() -> bool {
+    true
 }
 
 #[derive(Debug, Deserialize)]
@@ -118,22 +134,6 @@ impl Default for Mpd {
         Mpd {
             address: String::from("127.0.0.1:6600"),
             password: None,
-        }
-    }
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(default)]
-pub struct Submission {
-    pub genres_as_folksonomy: bool,
-    pub genre_separator: Option<char>,
-}
-
-impl Default for Submission {
-    fn default() -> Self {
-        Submission {
-            genres_as_folksonomy: true,
-            genre_separator: None,
         }
     }
 }

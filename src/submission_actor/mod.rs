@@ -56,7 +56,7 @@ impl SubmissionActor {
         debug!("checking login token");
         let token_valid = http_client
             .get(build_url(
-                &configuration.api_url,
+                &configuration.submission.api_url,
                 LISTENBRAINZ_TOKEN_CHECK_URL,
             ))
             .send()
@@ -97,7 +97,7 @@ fn build_http_client(configuration: &Configuration) -> Client {
     let mut headers = HeaderMap::new();
     headers.insert(
         header::AUTHORIZATION,
-        HeaderValue::from_str(&format!("Token {}", configuration.token))
+        HeaderValue::from_str(&format!("Token {}", configuration.submission.token))
             .expect("failed to create Authorization header"),
     );
 
@@ -158,7 +158,10 @@ async fn run(
 }
 
 fn submit(http_client: Client, configuration: &Configuration, span: Span, submission: Submission) {
-    let url = build_url(&configuration.api_url, LISTENBRAINZ_SUBMISSION_URL);
+    let url = build_url(
+        &configuration.submission.api_url,
+        LISTENBRAINZ_SUBMISSION_URL,
+    );
 
     tokio::spawn(
         async move {
