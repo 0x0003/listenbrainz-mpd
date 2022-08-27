@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use mpd_client::{commands::responses::Song, Tag};
+use mpd_client::{responses::Song, tag::Tag};
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 

@@ -11,18 +11,14 @@ use std::{
 use anyhow::{bail, Context, Result};
 use clap::{ArgAction, Parser};
 use mpd_client::{
-    commands::{
-        self,
-        responses::{PlayState, Song},
-    },
-    state_changes::StateChanges,
-    Client, Subsystem,
+    client::{Client, ConnectionEvent, ConnectionEvents, Subsystem},
+    commands,
+    responses::{PlayState, Song},
 };
 use tokio::{
     net::{TcpStream, UnixStream},
     time::{sleep, Sleep},
 };
-use tokio_stream::StreamExt;
 use tracing::{debug, error, info, trace, warn};
 use tracing_subscriber::EnvFilter;
 
@@ -63,7 +59,7 @@ pub struct CliArgs {
     create_default_config: bool,
 }
 
-async fn connect(mpd_config: &config::Mpd) -> Result<(Client, StateChanges)> {
+async fn connect(mpd_config: &config::Mpd) -> Result<(Client, ConnectionEvents)> {
     let password = mpd_config.password.as_deref();
 
     if mpd_config.address.starts_with('/') {
@@ -84,7 +80,7 @@ async fn connect(mpd_config: &config::Mpd) -> Result<(Client, StateChanges)> {
     }
 }
 
-async fn connect_tcp(address: &str, password: Option<&str>) -> Result<(Client, StateChanges)> {
+async fn connect_tcp(address: &str, password: Option<&str>) -> Result<(Client, ConnectionEvents)> {
     debug!(?address, "connecting via TCP");
 
     let (address, port) = address.rsplit_once(':').unwrap_or((address, "6600"));
@@ -97,7 +93,7 @@ async fn connect_tcp(address: &str, password: Option<&str>) -> Result<(Client, S
         .map_err(Into::into)
 }
 
-async fn connect_unix(path: &Path, password: Option<&str>) -> Result<(Client, StateChanges)> {
+async fn connect_unix(path: &Path, password: Option<&str>) -> Result<(Client, ConnectionEvents)> {
     debug!(?path, "connecting via Unix socket");
     let socket = UnixStream::connect(path).await?;
     Client::connect_with_password_opt(socket, password)
@@ -134,7 +130,7 @@ impl State {
 
 async fn run(
     mpd_client: Client,
-    mut state_changes: StateChanges,
+    mut connection_events: ConnectionEvents,
     http_actor: SubmissionActor,
 ) -> Result<()> {
     // Setup initial state
@@ -168,11 +164,11 @@ async fn run(
 
     loop {
         tokio::select! {
-            subsystem = state_changes.next() => {
-                match subsystem {
-                    Some(Ok(Subsystem::Player | Subsystem::Queue)) => (),
-                    Some(Ok(_)) => continue,
-                    Some(Err(e)) => {
+            event = connection_events.next() => {
+                match event {
+                    Some(ConnectionEvent::SubsystemChange(Subsystem::Player | Subsystem::Queue)) => (),
+                    Some(ConnectionEvent::SubsystemChange(_)) => continue,
+                    Some(ConnectionEvent::ConnectionClosed(e)) => {
                         error!(error = ?e, "MPD error");
                         return Err(e.into());
                     }

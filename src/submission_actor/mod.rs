@@ -5,7 +5,7 @@ mod api;
 use std::time::Duration;
 
 use anyhow::{anyhow, bail, Context, Result};
-use mpd_client::commands::responses::Song;
+use mpd_client::responses::Song;
 use reqwest::{
     header::{self, HeaderMap, HeaderValue},
     Client, StatusCode,
