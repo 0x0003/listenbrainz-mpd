@@ -66,7 +66,7 @@ fn metadata_from_song(config: &Configuration, song: Song) -> Option<TrackMetadat
 
     let release_name = single_value(&mut tags, Tag::Album, song);
 
-    let additional_info = AdditionalInfo {
+    let mut additional_info = AdditionalInfo {
         artist_mbids: tags.remove(&Tag::MusicBrainzArtistId).unwrap_or_default(),
         release_mbid: single_value(&mut tags, Tag::MusicBrainzReleaseId, song),
         recording_mbid: single_value(&mut tags, Tag::MusicBrainzRecordingId, song),
@@ -83,6 +83,8 @@ fn metadata_from_song(config: &Configuration, song: Song) -> Option<TrackMetadat
         submission_client: env!("CARGO_PKG_NAME"),
         submission_client_version: env!("CARGO_PKG_VERSION"),
     };
+
+    additional_info.validate_mbids();
 
     Some(TrackMetadata {
         artist_name,
@@ -194,4 +196,56 @@ struct AdditionalInfo {
     media_player: &'static str,
     submission_client: &'static str,
     submission_client_version: &'static str,
+}
+
+impl AdditionalInfo {
+    fn validate_mbids(&mut self) {
+        validate_multiple_mbid(&mut self.artist_mbids);
+        validate_single_mbid(&mut self.release_mbid);
+        validate_single_mbid(&mut self.recording_mbid);
+        validate_single_mbid(&mut self.track_mbid);
+        validate_multiple_mbid(&mut self.work_mbids);
+    }
+}
+
+fn validate_single_mbid(val: &mut Option<String>) {
+    if let Some(mbid) = val {
+        if !is_valid_mbid(mbid) {
+            warn!(?mbid, "invalid MBID, ignoring");
+            *val = None;
+        }
+    }
+}
+
+fn validate_multiple_mbid(vals: &mut Vec<String>) {
+    vals.retain(|mbid| {
+        let is_valid = is_valid_mbid(mbid);
+
+        if !is_valid {
+            warn!(?mbid, "invalid MBID, ignoring");
+        }
+
+        is_valid
+    });
+}
+
+/// Validate that a given MBID string conforms to the expected format (dashed lowercase).
+fn is_valid_mbid(mbid: &str) -> bool {
+    if mbid.len() != 36 {
+        return false;
+    }
+
+    for range in [0..8, 9..13, 14..18, 19..23, 24..36] {
+        if mbid[range].chars().any(|c| !c.is_ascii_alphanumeric()) {
+            return false;
+        }
+    }
+
+    for dash_position in [8, 13, 18, 23] {
+        if &mbid[dash_position..=dash_position] != "-" {
+            return false;
+        }
+    }
+
+    true
 }
