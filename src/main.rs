@@ -13,7 +13,7 @@ use clap::{ArgAction, Parser};
 use mpd_client::{
     client::{Client, ConnectionEvent, ConnectionEvents, Subsystem},
     commands,
-    responses::{PlayState, Song},
+    responses::{PlayState, Song, SongInQueue},
 };
 use tokio::{
     net::{TcpStream, UnixStream},
@@ -106,7 +106,7 @@ struct State {
     /// Current play state of the server.
     play_state: PlayState,
     /// The current playing song, if any.
-    song: Option<Song>,
+    song: Option<SongInQueue>,
     /// The point in time at which the current listen segment was started. This is used to
     /// calculate the real elapsed time when processing pauses/unpauses.
     listen_started: Instant,
@@ -152,11 +152,11 @@ async fn run(
     if let Some(song) = &state.song {
         if state.play_state == PlayState::Playing {
             debug!(
-                song = %song.url,
+                song = %song.song.url,
                 required_playtime = ?listen_required,
                 "starting with initial song"
             );
-            http_actor.now_playing(song.clone());
+            http_actor.now_playing(song.song.clone());
         }
     }
 
@@ -194,7 +194,7 @@ async fn handle_state_change(
 ) -> Result<()> {
     let (new_play_state, new_song) = get_status_and_song(mpd_client).await?;
 
-    let same_song = state.song.as_ref().map(|s| &s.url) == new_song.as_ref().map(|s| &s.url);
+    let same_song = is_same_song(state.song.as_ref(), new_song.as_ref());
 
     if same_song && state.play_state == new_play_state {
         // Nothing relevant changed. This happens e.g. when the status of the repeat or shuffle
@@ -224,7 +224,7 @@ async fn handle_state_change(
         // The song changed
         let required_playtime = required_time_for_song(new_song.as_ref());
         debug!(
-            song = song_url(new_song.as_ref()),
+            song = song_url(new_song.as_ref().map(|s| &s.song)),
             ?required_playtime,
             "song changed"
         );
@@ -237,7 +237,7 @@ async fn handle_state_change(
 
         if let Some(song) = &new_song {
             if state.play_state == PlayState::Playing {
-                http_actor.now_playing(song.clone());
+                http_actor.now_playing(song.song.clone());
             }
         }
     }
@@ -250,7 +250,7 @@ async fn handle_state_change(
 
 fn handle_listen_complete(state: &mut State, http_actor: &SubmissionActor) {
     info!(
-        song = song_url(state.song.as_ref()),
+        song = song_url(state.song.as_ref().map(|s| &s.song)),
         "submitting listen entry"
     );
     state.listen_submitted = true;
@@ -263,22 +263,27 @@ fn handle_listen_complete(state: &mut State, http_actor: &SubmissionActor) {
         .unwrap()
         .as_secs();
 
-    http_actor.listen(song, timestamp);
+    http_actor.listen(song.song, timestamp);
 }
 
-async fn get_status_and_song(client: &Client) -> Result<(PlayState, Option<Song>)> {
+fn is_same_song(a: Option<&SongInQueue>, b: Option<&SongInQueue>) -> bool {
+    let Some((a, b)) = a.zip(b) else { return false; };
+    a.id == b.id && a.position == b.position && a.song.url == b.song.url
+}
+
+async fn get_status_and_song(client: &Client) -> Result<(PlayState, Option<SongInQueue>)> {
     client
         .command_list((commands::Status, commands::CurrentSong))
         .await
-        .map(|(state, song)| (state.state, song.map(|s| s.song)))
+        .map(|(state, song)| (state.state, song))
         .map_err(Into::into)
 }
 
 /// Calculate the required listen duration for the given song to count as a completed ListenBrainz
 /// listen.
-fn required_time_for_song(song: Option<&Song>) -> Duration {
-    if let Some(song) = song {
-        if let Some(song_duration) = song.duration {
+fn required_time_for_song(song: Option<&SongInQueue>) -> Duration {
+    if let Some(s) = song {
+        if let Some(song_duration) = s.song.duration {
             // A song counts as listened if either half its duration or MAX_REQUIRED_LISTEN_TIME,
             // whichever is lower, was listened to
             cmp::min(song_duration / 2, MAX_REQUIRED_LISTEN_TIME)
