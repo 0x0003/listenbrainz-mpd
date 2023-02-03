@@ -181,7 +181,7 @@ async fn run(
                 handle_state_change(&mut state, &mpd_client, http_actor.clone()).await?;
             }
             _ = &mut state.listen_finished, if state.should_poll() => {
-                handle_listen_complete(&mut state, http_actor.clone());
+                handle_listen_complete(&mut state, &http_actor);
             }
         }
     }
@@ -248,7 +248,7 @@ async fn handle_state_change(
     Ok(())
 }
 
-fn handle_listen_complete(state: &mut State, http_actor: SubmissionActor) {
+fn handle_listen_complete(state: &mut State, http_actor: &SubmissionActor) {
     info!(
         song = song_url(state.song.as_ref()),
         "submitting listen entry"

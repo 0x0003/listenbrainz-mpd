@@ -50,16 +50,12 @@ fn metadata_from_song(config: &Configuration, song: Song) -> Option<TrackMetadat
     let duration = song.duration;
     let song = song.url.as_str();
 
-    let artist_name = if let Some(a) = single_value(&mut tags, Tag::Artist, song) {
-        a
-    } else {
+    let Some(artist_name) = single_value(&mut tags, Tag::Artist, song) else {
         warn!(song, "cannot submit track without artist tag");
         return None;
     };
 
-    let track_name = if let Some(a) = single_value(&mut tags, Tag::Title, song) {
-        a
-    } else {
+    let Some(track_name) = single_value(&mut tags, Tag::Title, song) else {
         warn!(song, "cannot submit track without title tag");
         return None;
     };

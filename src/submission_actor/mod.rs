@@ -116,8 +116,7 @@ enum ActorRequest {
 impl ActorRequest {
     fn song(&self) -> &str {
         match self {
-            ActorRequest::NowPlaying { song } => &song.url,
-            ActorRequest::Listen { song, .. } => &song.url,
+            ActorRequest::NowPlaying { song } | ActorRequest::Listen { song, .. } => &song.url,
         }
     }
 
@@ -146,10 +145,7 @@ async fn run(
     while let Some(request) = requests.recv().await {
         let span = info_span!("submission", song = %request.song(), kind = %request.kind());
 
-        let submission = if let Some(s) = span.in_scope(|| request.into_submission(&configuration))
-        {
-            s
-        } else {
+        let Some(submission) = span.in_scope(|| request.into_submission(&configuration)) else {
             continue;
         };
 
