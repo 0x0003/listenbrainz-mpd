@@ -25,10 +25,10 @@ pub fn load(args: CliArgs) -> Result<Configuration> {
 
     debug!(?path, "loading configuration file");
 
-    let config = fs::read(path)
+    let config = fs::read_to_string(path)
         .with_context(|| format!("Failed to read configuration file at {}", path.display()))?;
 
-    let mut config: Configuration = toml::from_slice(&config)
+    let mut config: Configuration = toml::from_str(&config)
         .with_context(|| format!("Failed to parse configuration file at {}", path.display()))?;
 
     validate(&mut config).context("Invalid configuration")?;
