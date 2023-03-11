@@ -6,6 +6,9 @@
 # If you use listenbrainz.org, obtain this from https://listenbrainz.org/profile and put it
 # between the quotes.
 token = ""
+# Alternatively you can specify a path to a file that contains the token. This file will be read
+# at runtime.
+#token_file = ""
 
 # Submit genre tags on the played songs as folksonomy tags.
 #genres_as_folksonomy = true
@@ -29,3 +32,7 @@ token = ""
 # MPD server password.
 # Defaults to no password.
 #password = ""
+# Alternatively you can specify a path to a file that contains the password. This file will be
+# read at runtime.
+# Defaults to no path.
+#password_file = ""

@@ -31,13 +31,27 @@ pub fn load(args: CliArgs) -> Result<Configuration> {
     let mut config: Configuration = toml::from_str(&config)
         .with_context(|| format!("Failed to parse configuration file at {}", path.display()))?;
 
+    if let Token::File { token_file } = &config.submission.token {
+        let token = fs::read_to_string(token_file)
+            .with_context(|| format!("Failed to read token file {}", token_file.display()))?;
+        config.submission.token = Token::Inline { token };
+    }
+
+    if config.mpd.password.is_none() {
+        if let Some(pw_file) = &config.mpd.password_file {
+            let password = fs::read_to_string(pw_file)
+                .with_context(|| format!("Failed to read password file {}", pw_file.display()))?;
+            config.mpd.password = Some(password);
+        }
+    }
+
     validate(&mut config).context("Invalid configuration")?;
 
     Ok(config)
 }
 
 fn validate(config: &mut Configuration) -> Result<()> {
-    if config.submission.token.is_empty() {
+    if config.submission.token.value().is_empty() {
         bail!("User token cannot be empty");
     }
 
@@ -104,8 +118,26 @@ pub struct Configuration {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum Token {
+    Inline { token: String },
+    File { token_file: PathBuf },
+}
+
+impl Token {
+    pub fn value(&self) -> &str {
+        if let Token::Inline { token } = self {
+            token.trim()
+        } else {
+            panic!("Token value was not determined while parsing.");
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
 pub struct Submission {
-    pub token: String,
+    #[serde(flatten)]
+    pub token: Token,
     #[serde(default = "default_api_url")]
     pub api_url: String,
     #[serde(default = "genres_as_folksonomy")]
@@ -127,6 +159,7 @@ fn genres_as_folksonomy() -> bool {
 pub struct Mpd {
     pub address: String,
     pub password: Option<String>,
+    pub password_file: Option<PathBuf>,
 }
 
 impl Default for Mpd {
@@ -134,6 +167,7 @@ impl Default for Mpd {
         Mpd {
             address: String::from("127.0.0.1:6600"),
             password: None,
+            password_file: None,
         }
     }
 }
