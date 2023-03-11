@@ -174,7 +174,7 @@ fn submit(http_client: Client, configuration: &Configuration, span: Span, submis
                     }
                     Err(SubmitError::Error(e)) => {
                         error!(attempt, error = ?e, "server error while submitting");
-                        if attempt <= 5 {
+                        if attempt <= 5 && matches!(submission, Submission::Listen(_)) {
                             sleep(Duration::from_secs(5) * attempt).await;
                             attempt += 1;
                             debug!("retrying");
