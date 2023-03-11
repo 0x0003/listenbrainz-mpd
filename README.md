@@ -15,6 +15,10 @@ A [ListenBrainz](https://listenbrainz.org) submission client for [MPD](https://w
 
      `cargo install listenbrainz-mpd`
 
+     #### AUR (Arch Linux)
+
+     Install the [`listenbrainz-mpd` AUR package](https://aur.archlinux.org/packages/listenbrainz-mpd).
+
 
   2. Place the sample configuration file in the appropriate location and fill in your ListenBrainz user token and potentially other relevant configuration.
 
