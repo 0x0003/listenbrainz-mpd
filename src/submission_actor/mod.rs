@@ -97,7 +97,7 @@ fn build_http_client(configuration: &Configuration) -> Client {
     let mut headers = HeaderMap::new();
     headers.insert(
         header::AUTHORIZATION,
-        HeaderValue::from_str(&format!("Token {}", configuration.submission.token))
+        HeaderValue::from_str(&format!("Token {}", configuration.submission.token.value()))
             .expect("failed to create Authorization header"),
     );
 
