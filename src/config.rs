@@ -37,6 +37,14 @@ pub fn load(args: CliArgs) -> Result<Configuration> {
         config.submission.token = Token::Inline { token };
     }
 
+    if config.mpd.password.is_none() {
+        if let Some(pw_file) = &config.mpd.password_file {
+            let password = fs::read_to_string(pw_file)
+                .with_context(|| format!("Failed to read password file {}", pw_file.display()))?;
+            config.mpd.password = Some(password);
+        }
+    }
+
     validate(&mut config).context("Invalid configuration")?;
 
     Ok(config)
@@ -151,6 +159,7 @@ fn genres_as_folksonomy() -> bool {
 pub struct Mpd {
     pub address: String,
     pub password: Option<String>,
+    pub password_file: Option<PathBuf>,
 }
 
 impl Default for Mpd {
@@ -158,6 +167,7 @@ impl Default for Mpd {
         Mpd {
             address: String::from("127.0.0.1:6600"),
             password: None,
+            password_file: None,
         }
     }
 }

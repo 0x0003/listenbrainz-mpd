@@ -32,3 +32,7 @@ token = ""
 # MPD server password.
 # Defaults to no password.
 #password = ""
+# Alternatively you can specify a path to a file that contains the password. This file will be
+# read at runtime.
+# Defaults to no path.
+#password_file = ""
