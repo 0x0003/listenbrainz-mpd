@@ -22,6 +22,17 @@ token = ""
 # listenbrainz.org.
 #api_url = "https://api.listenbrainz.org"
 
+# Listens that are not immediately sucessfully transmitted (e.g. because you are offline or the
+# target server is having an outage) can be saved to a local cache for later submission and will
+# automatically be retried.
+# This is enabled by default, but can be disabled if undesired.
+#enable_cache = true
+
+# Path to the cache file that stores failed listens. Defaults to
+# `$XDG_DATA_HOME/listenbrainz-mpd-cache.sqlite3` or
+# `$HOME/.local/share/listenbrainz-mpd-cache.sqlite3` if unset.
+#cache_file = "/some/other/path/filename.db"
+
 # This section configures how the application connects to your MPD server.
 [mpd]
 # Address of the MPD server.

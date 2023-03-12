@@ -18,7 +18,7 @@ use tokio::{
 use tracing::{debug, error, trace, warn};
 
 use self::api::SerializedSubmission;
-use crate::config::Configuration;
+use crate::{cache_actor::CacheActor, config::Configuration};
 
 /// API sub-path to which listen records are submitted.
 const LISTENBRAINZ_SUBMISSION_PATH: &str = "/1/submit-listens";
@@ -45,11 +45,14 @@ pub struct SubmissionActor {
 
 impl SubmissionActor {
     /// Start the submission actor.
-    pub async fn start(configuration: Configuration) -> Result<SubmissionActor> {
+    pub async fn start(
+        configuration: Configuration,
+        cache_actor: CacheActor,
+    ) -> Result<SubmissionActor> {
         let http_client = build_http_client(&configuration);
 
         let (tx, rx) = mpsc::unbounded_channel();
-        tokio::spawn(run(http_client, configuration, rx));
+        tokio::spawn(run(http_client, configuration, cache_actor, rx));
 
         Ok(SubmissionActor { tx })
     }
@@ -92,6 +95,7 @@ enum ActorRequest {
 async fn run(
     http_client: Client,
     config: Configuration,
+    cache_actor: CacheActor,
     mut requests: UnboundedReceiver<ActorRequest>,
 ) {
     while let Some(request) = requests.recv().await {
@@ -107,16 +111,37 @@ async fn run(
             }
             ActorRequest::Listen { song, timestamp } => {
                 let Some(listen) = api::serialize_single_listen(&config, song, timestamp) else { continue; };
-                let submission = api::prepare_completed_listens(&listen);
 
-                if let Err(e) = submit(&http_client, &config, &submission)
-                    .await
-                    .context("Submission of completed Listen failed")
-                {
+                // Load possible cached listens
+                let mut submissions = cache_actor.load_pending_submissions().await;
+                submissions.push(listen);
+
+                let submission = api::prepare_completed_listens(&submissions);
+
+                if let Err(e) = submit(&http_client, &config, &submission).await.context(
+                    submission_failed_error_string(config.submission.enable_cache),
+                ) {
                     error!("{e:#}");
+
+                    // Cache the failed submission(s) for future resubmission
+                    debug!(
+                        count = submissions.len(),
+                        "caching submissions for resubmission"
+                    );
+                    cache_actor.cache_submissions(submissions);
                 }
             }
         }
+    }
+
+    cache_actor.shutdown();
+}
+
+fn submission_failed_error_string(enable_cache: bool) -> &'static str {
+    if enable_cache {
+        "Submission of completed Listen failed (will be cached for later submission)"
+    } else {
+        "Submission of completed Listen failed"
     }
 }
 

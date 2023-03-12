@@ -1,3 +1,4 @@
+mod cache_actor;
 mod config;
 mod submission_actor;
 
@@ -22,6 +23,7 @@ use tokio::{
 use tracing::{debug, error, info, trace, warn};
 use tracing_subscriber::EnvFilter;
 
+use crate::cache_actor::CacheActor;
 use crate::submission_actor::SubmissionActor;
 
 /// The maximum time you have to listen to a song before it will count as a listen. Set to 4
@@ -42,8 +44,9 @@ async fn main() -> Result<()> {
 
     let config = config::load(args)?;
 
+    let cache_actor = CacheActor::start(&config)?;
     let (mpd_client, state_changes) = connect(&config.mpd).await?;
-    let http_actor = SubmissionActor::start(config).await?;
+    let http_actor = SubmissionActor::start(config, cache_actor).await?;
 
     run(mpd_client, state_changes, http_actor).await
 }

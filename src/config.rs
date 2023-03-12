@@ -144,6 +144,14 @@ pub struct Submission {
     pub genres_as_folksonomy: bool,
     #[serde(default)]
     pub genre_separator: Option<char>,
+    #[serde(default = "default_cache")]
+    pub enable_cache: bool,
+    #[serde(default)]
+    pub cache_file: Option<PathBuf>,
+}
+
+fn default_cache() -> bool {
+    true
 }
 
 fn default_api_url() -> String {

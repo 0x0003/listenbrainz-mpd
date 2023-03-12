@@ -27,7 +27,7 @@ const MAX_LISTENS_PER_IMPORT: usize = 99;
 #[serde(tag = "listen_type", content = "payload")]
 enum Submission<'a> {
     #[serde(rename = "import")]
-    CompletedListens([&'a RawValue; 1]),
+    CompletedListens(&'a [Box<RawValue>]),
     #[serde(rename = "playing_now")]
     PlayingNow([&'a PlayingNow; 1]),
 }
@@ -76,9 +76,10 @@ pub(super) fn serialize_single_listen(
     }
 }
 
-pub(super) fn prepare_completed_listens(listen: &RawValue) -> SerializedSubmission {
-    assert!(listen.get().len() <= MAX_SERIALIZED_LISTEN_LENGTH);
-    let submission = Submission::CompletedListens([listen]);
+pub(super) fn prepare_completed_listens(listens: &[Box<RawValue>]) -> SerializedSubmission {
+    assert!(listens.len() <= MAX_LISTENS_PER_IMPORT);
+
+    let submission = Submission::CompletedListens(listens);
     let serialized = serde_json::value::to_raw_value(&submission).unwrap();
     SerializedSubmission(serialized)
 }
