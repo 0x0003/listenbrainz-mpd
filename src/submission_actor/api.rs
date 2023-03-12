@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use mpd_client::{responses::Song, tag::Tag};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tracing::warn;
 
 use crate::config::Configuration;
@@ -14,12 +14,6 @@ const MAX_TAGS: usize = 50;
 /// Maximum length of a single tag the ListenBrainz server will accept.
 const MAX_SINGLE_TAG_LENGTH: usize = 64;
 
-#[derive(Debug, Deserialize)]
-pub(super) struct ValidateToken {
-    pub(super) valid: bool,
-    #[serde(default)]
-    pub(super) user_name: String,
-}
 
 #[derive(Debug, Serialize)]
 #[serde(tag = "listen_type", content = "payload")]

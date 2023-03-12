@@ -16,7 +16,7 @@ use tokio::{
 };
 use tracing::{debug, error, info_span, trace, warn, Instrument, Span};
 
-use self::api::{Submission, ValidateToken};
+use self::api::SerializedSubmission;
 use crate::config::Configuration;
 
 /// API URL to which listen records are submitted.
@@ -51,26 +51,6 @@ impl SubmissionActor {
     /// Start the submission actor.
     pub async fn start(configuration: Configuration) -> Result<SubmissionActor> {
         let http_client = build_http_client(&configuration);
-
-        // Check if the configured login token is actually valid
-        debug!("checking login token");
-        let token_valid = http_client
-            .get(build_url(
-                &configuration.submission.api_url,
-                LISTENBRAINZ_TOKEN_CHECK_URL,
-            ))
-            .send()
-            .await
-            .context("Failed to check ListenBrainz token")?
-            .json::<ValidateToken>()
-            .await
-            .context("Failed to check ListenBrainz token")?;
-
-        if token_valid.valid {
-            debug!(username = %token_valid.user_name, "user token is valid");
-        } else {
-            bail!("The ListenBrainz user token is invalid");
-        }
 
         let (tx, rx) = mpsc::unbounded_channel();
         tokio::spawn(run(http_client, configuration, rx));
