@@ -459,6 +459,7 @@ dependencies = [
  "clap",
  "dirs",
  "mpd_client",
+ "once_cell",
  "reqwest",
  "serde",
  "serde_json",

@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 use mpd_client::{responses::Song, tag::Tag};
 use serde::Serialize;
+use serde_json::value::RawValue;
 use tracing::warn;
 
 use crate::config::Configuration;
@@ -14,29 +15,72 @@ const MAX_TAGS: usize = 50;
 /// Maximum length of a single tag the ListenBrainz server will accept.
 const MAX_SINGLE_TAG_LENGTH: usize = 64;
 
+/// Maximum length in bytes of a single listen submission.
+const MAX_SERIALIZED_LISTEN_LENGTH: usize = 10240;
+
+/// Maximum number of listens that can be included in an import request. The ListenBrainz server
+/// documents a limit of 100, subtract one to ensure remaining space for the surrounding JSON
+/// padding
+const MAX_LISTENS_PER_IMPORT: usize = 99;
 
 #[derive(Debug, Serialize)]
 #[serde(tag = "listen_type", content = "payload")]
-pub(super) enum Submission {
-    #[serde(rename = "single")]
-    Listen([Listen; 1]),
+enum Submission<'a> {
+    #[serde(rename = "import")]
+    CompletedListens([&'a RawValue; 1]),
     #[serde(rename = "playing_now")]
-    PlayingNow([PlayingNow; 1]),
+    PlayingNow([&'a PlayingNow; 1]),
 }
 
-impl Submission {
-    pub(super) fn listen(config: &Configuration, song: Song, timestamp: u64) -> Option<Submission> {
-        Some(Submission::Listen([Listen {
-            listened_at: timestamp,
-            track_metadata: metadata_from_song(config, song)?,
-        }]))
-    }
+#[derive(Debug, Serialize)]
+pub(super) struct SerializedSubmission(Box<RawValue>);
 
-    pub(super) fn playing_now(config: &Configuration, song: Song) -> Option<Submission> {
-        Some(Submission::PlayingNow([PlayingNow {
-            track_metadata: metadata_from_song(config, song)?,
-        }]))
+pub(super) fn prepare_playing_now(
+    config: &Configuration,
+    song: Song,
+) -> Option<SerializedSubmission> {
+    let playing_now = PlayingNow {
+        track_metadata: metadata_from_song(config, song)?,
+    };
+    let submission = Submission::PlayingNow([&playing_now]);
+
+    let serialized = serde_json::value::to_raw_value(&submission).unwrap();
+    let serialized_length = serialized.get().len();
+
+    if serialized_length <= MAX_SERIALIZED_LISTEN_LENGTH {
+        Some(SerializedSubmission(serialized))
+    } else {
+        warn!(serialized_length, "submission would be too large, skipping");
+        None
     }
+}
+
+pub(super) fn serialize_single_listen(
+    config: &Configuration,
+    song: Song,
+    timestamp: u64,
+) -> Option<Box<RawValue>> {
+    let listen = Listen {
+        track_metadata: metadata_from_song(config, song)?,
+        listened_at: timestamp,
+    };
+
+    let serialized = serde_json::value::to_raw_value(&listen).unwrap();
+    let serialized_length = serialized.get().len();
+
+    if serialized_length <= MAX_SERIALIZED_LISTEN_LENGTH {
+        Some(serialized)
+    } else {
+        warn!(serialized_length, "submission would be too large, skipping");
+        None
+    }
+}
+
+pub(super) fn prepare_completed_listens(listen: &RawValue) -> SerializedSubmission {
+    assert!(listen.get().len() <= MAX_SERIALIZED_LISTEN_LENGTH);
+    let submission = Submission::CompletedListens([listen]);
+    let serialized = serde_json::value::to_raw_value(&submission).unwrap();
+    SerializedSubmission(serialized)
 }
 
 fn metadata_from_song(config: &Configuration, song: Song) -> Option<TrackMetadata> {

@@ -4,8 +4,9 @@ mod api;
 
 use std::time::Duration;
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{anyhow, Context, Result};
 use mpd_client::responses::Song;
+use once_cell::sync::OnceCell;
 use reqwest::{
     header::{self, HeaderMap, HeaderValue},
     Client, StatusCode,
@@ -14,31 +15,26 @@ use tokio::{
     sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
     time::sleep,
 };
-use tracing::{debug, error, info_span, trace, warn, Instrument, Span};
+use tracing::{debug, error, trace, warn};
 
 use self::api::SerializedSubmission;
 use crate::config::Configuration;
 
-/// API URL to which listen records are submitted.
-const LISTENBRAINZ_SUBMISSION_URL: &str = "/1/submit-listens";
+/// API sub-path to which listen records are submitted.
+const LISTENBRAINZ_SUBMISSION_PATH: &str = "/1/submit-listens";
 
-/// API URL used to check if the login token is valid.
-const LISTENBRAINZ_TOKEN_CHECK_URL: &str = "/1/validate-token";
+fn submission_url(config: &Configuration) -> &'static str {
+    static URL: OnceCell<String> = OnceCell::new();
 
-/// Build a URL from the given base and path segment.
-fn build_url(base: &str, url: &str) -> String {
-    let url = if base.ends_with('/') && url.starts_with('/') {
-        // Overlapping slashes
-        &url[1..]
-    } else {
-        url
-    };
+    URL.get_or_init(|| {
+        let base = if config.submission.api_url.ends_with('/') {
+            &config.submission.api_url[..config.submission.api_url.len() - 1]
+        } else {
+            &config.submission.api_url
+        };
 
-    let mut out = String::with_capacity(base.len() + url.len());
-    out.push_str(base);
-    out.push_str(url);
-
-    out
+        format!("{base}{LISTENBRAINZ_SUBMISSION_PATH}")
+    })
 }
 
 /// Central actor that handles HTTP requests.
@@ -93,81 +89,55 @@ enum ActorRequest {
     Listen { song: Song, timestamp: u64 },
 }
 
-impl ActorRequest {
-    fn song(&self) -> &str {
-        match self {
-            ActorRequest::NowPlaying { song } | ActorRequest::Listen { song, .. } => &song.url,
-        }
-    }
-
-    fn kind(&self) -> &'static str {
-        match self {
-            ActorRequest::NowPlaying { .. } => "now_playing",
-            ActorRequest::Listen { .. } => "listen",
-        }
-    }
-
-    fn into_submission(self, config: &Configuration) -> Option<api::Submission> {
-        match self {
-            ActorRequest::NowPlaying { song } => api::Submission::playing_now(config, song),
-            ActorRequest::Listen { song, timestamp } => {
-                api::Submission::listen(config, song, timestamp)
-            }
-        }
-    }
-}
-
 async fn run(
     http_client: Client,
-    configuration: Configuration,
+    config: Configuration,
     mut requests: UnboundedReceiver<ActorRequest>,
 ) {
     while let Some(request) = requests.recv().await {
-        let span = info_span!("submission", song = %request.song(), kind = %request.kind());
+        match request {
+            ActorRequest::NowPlaying { song } => {
+                let Some(submission) = api::prepare_playing_now(&config, song) else { continue; };
+                if let Err(e) = submit(&http_client, &config, &submission)
+                    .await
+                    .context("Submission of \"Playing Now\" notification failed")
+                {
+                    error!("{e:#}");
+                }
+            }
+            ActorRequest::Listen { song, timestamp } => {
+                let Some(listen) = api::serialize_single_listen(&config, song, timestamp) else { continue; };
+                let submission = api::prepare_completed_listens(&listen);
 
-        let Some(submission) = span.in_scope(|| request.into_submission(&configuration)) else {
-            continue;
-        };
-
-        submit(http_client.clone(), &configuration, span, submission);
-    }
-}
-
-fn submit(http_client: Client, configuration: &Configuration, span: Span, submission: Submission) {
-    let url = build_url(
-        &configuration.submission.api_url,
-        LISTENBRAINZ_SUBMISSION_URL,
-    );
-
-    tokio::spawn(
-        async move {
-            let mut attempt = 1;
-            loop {
-                match do_submit(&http_client, &url, &submission).await {
-                    Ok(()) => {
-                        debug!("submission accepted");
-                        break;
-                    }
-                    Err(SubmitError::RateLimit { retry_after }) => {
-                        warn!(?retry_after, "hit API rate limit");
-                        sleep(retry_after).await;
-                    }
-                    Err(SubmitError::Error(e)) => {
-                        error!(attempt, error = ?e, "server error while submitting");
-                        if attempt <= 5 && matches!(submission, Submission::Listen(_)) {
-                            sleep(Duration::from_secs(5) * attempt).await;
-                            attempt += 1;
-                            debug!("retrying");
-                        } else {
-                            error!("giving up on submission");
-                            break;
-                        }
-                    }
+                if let Err(e) = submit(&http_client, &config, &submission)
+                    .await
+                    .context("Submission of completed Listen failed")
+                {
+                    error!("{e:#}");
                 }
             }
         }
-        .instrument(span),
-    );
+    }
+}
+
+async fn submit(
+    http_client: &Client,
+    config: &Configuration,
+    payload: &SerializedSubmission,
+) -> Result<()> {
+    loop {
+        match do_submit(http_client, submission_url(config), payload).await {
+            Ok(()) => {
+                debug!("submission accepted");
+                break Ok(());
+            }
+            Err(SubmitError::RateLimit { retry_after }) => {
+                warn!(?retry_after, "hit API rate limit");
+                sleep(retry_after).await;
+            }
+            Err(SubmitError::Error(e)) => break Err(e),
+        }
+    }
 }
 
 enum SubmitError {
@@ -184,14 +154,14 @@ impl From<anyhow::Error> for SubmitError {
 async fn do_submit(
     http_client: &Client,
     url: &str,
-    submission: &Submission,
+    submission: &SerializedSubmission,
 ) -> Result<(), SubmitError> {
     let response = http_client
         .post(url)
         .json(submission)
         .send()
         .await
-        .context("error sending ListenBrainz submission request")?;
+        .context("Error sending ListenBrainz submission request")?;
 
     let status_code = response.status();
     let retry_after = response
@@ -203,12 +173,16 @@ async fn do_submit(
     let response_body = response
         .bytes()
         .await
-        .context("error reading response body")?;
+        .context("Error reading response body")?;
+
     trace!(?status_code, ?response_body);
 
     match status_code {
         StatusCode::OK => Ok(()),
+        StatusCode::UNAUTHORIZED => {
+            Err(anyhow!("Invalid ListenBrainz token (please update your configuration)").into())
+        }
         StatusCode::TOO_MANY_REQUESTS => Err(SubmitError::RateLimit { retry_after }),
-        other_status => Err(anyhow!("unexpected status code ({:?})", other_status).into()),
+        other_status => Err(anyhow!("Unexpected status code ({:?})", other_status).into()),
     }
 }
