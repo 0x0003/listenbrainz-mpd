@@ -8,7 +8,7 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use clap::{ArgAction, Parser};
 use mpd_client::{
     client::{Client, ConnectionEvent, ConnectionEvents, Subsystem},
@@ -173,8 +173,8 @@ async fn run(
                         return Err(e.into());
                     }
                     None => {
-                        error!("MPD server closed connection");
-                        bail!("MPD server closed connection");
+                        debug!("MPD server closed connection");
+                        return Ok(());
                     }
                 }
 
