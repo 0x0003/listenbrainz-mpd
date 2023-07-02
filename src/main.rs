@@ -239,7 +239,7 @@ async fn handle_state_change(
         state.listen_submitted = false;
 
         if let Some(song) = &new_song {
-            if state.play_state == PlayState::Playing {
+            if new_play_state == PlayState::Playing {
                 http_actor.now_playing(song.song.clone());
             }
         }
