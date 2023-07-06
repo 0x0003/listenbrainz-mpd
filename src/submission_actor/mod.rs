@@ -101,7 +101,9 @@ async fn run(
     while let Some(request) = requests.recv().await {
         match request {
             ActorRequest::NowPlaying { song } => {
-                let Some(submission) = api::prepare_playing_now(&config, song) else { continue; };
+                let Some(submission) = api::prepare_playing_now(&config, song) else {
+                    continue;
+                };
                 if let Err(e) = submit(&http_client, &config, &submission)
                     .await
                     .context("Submission of \"Playing Now\" notification failed")
@@ -110,7 +112,9 @@ async fn run(
                 }
             }
             ActorRequest::Listen { song, timestamp } => {
-                let Some(listen) = api::serialize_single_listen(&config, song, timestamp) else { continue; };
+                let Some(listen) = api::serialize_single_listen(&config, song, timestamp) else {
+                    continue;
+                };
 
                 // Load possible cached listens
                 let mut submissions = cache_actor.load_pending_submissions().await;

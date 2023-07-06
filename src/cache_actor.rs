@@ -65,7 +65,9 @@ impl CacheActor {
     }
 
     pub async fn load_pending_submissions(&self) -> Vec<Box<RawValue>> {
-        let Some((tx, _)) = &self.0 else { return Vec::new(); };
+        let Some((tx, _)) = &self.0 else {
+            return Vec::new();
+        };
 
         let (responder_tx, responder_rx) = oneshot::channel();
         tx.send(CacheAction::GetCachedSubmissions(responder_tx))

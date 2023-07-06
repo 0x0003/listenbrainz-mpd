@@ -270,7 +270,7 @@ fn handle_listen_complete(state: &mut State, http_actor: &SubmissionActor) {
 }
 
 fn is_same_song(a: Option<&SongInQueue>, b: Option<&SongInQueue>) -> bool {
-    let Some((a, b)) = a.zip(b) else { return false; };
+    let Some((a, b)) = a.zip(b) else { return false };
     a.id == b.id && a.position == b.position && a.song.url == b.song.url
 }
 
