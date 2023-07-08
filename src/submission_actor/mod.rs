@@ -4,12 +4,13 @@ mod api;
 
 use std::time::Duration;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
+use bytes::Bytes;
 use mpd_client::responses::Song;
 use once_cell::sync::OnceCell;
 use reqwest::{
     header::{self, HeaderMap, HeaderValue},
-    Client, StatusCode,
+    Client, Method, Request, RequestBuilder, StatusCode,
 };
 use tokio::{
     sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
@@ -79,6 +80,7 @@ fn build_http_client(configuration: &Configuration) -> Client {
         HeaderValue::from_str(&format!("Token {}", configuration.submission.token.value()))
             .expect("failed to create Authorization header"),
     );
+    headers.insert(header::ACCEPT, HeaderValue::from_static("application/json"));
 
     reqwest::ClientBuilder::new()
         .default_headers(headers)
@@ -150,61 +152,58 @@ fn submission_failed_error_string(enable_cache: bool) -> &'static str {
 }
 
 async fn submit(http_client: &Client, config: &Configuration, body: JsonBody) -> Result<()> {
+    do_http_request(http_client, |http_client| {
+        http_client
+            .post(submission_url(config))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(body.clone())
+            .build()
+            .unwrap()
+    })
+    .await
+    .context("Failed to send submission")?;
+
+    Ok(())
+}
+
+async fn do_http_request<F>(http_client: &Client, mut build_request: F) -> Result<Bytes>
+where
+    F: FnMut(&Client) -> Request,
+{
     loop {
-        match do_submit(http_client, submission_url(config), &body).await {
-            Ok(()) => {
-                debug!("submission accepted");
-                break Ok(());
+        let request = build_request(http_client);
+        trace!("sending request");
+        let response = http_client
+            .execute(request)
+            .await
+            .context("Error sending ListenBrainz request")?;
+
+        match response.status() {
+            StatusCode::OK => {
+                let body = response
+                    .bytes()
+                    .await
+                    .context("Error reading ListenBrainz response")?;
+                trace!(?body, "request completed sucessfully");
+                break Ok(body);
             }
-            Err(SubmitError::RateLimit { retry_after }) => {
-                warn!(?retry_after, "hit API rate limit");
+            StatusCode::UNAUTHORIZED => {
+                bail!("Invalid ListenBrainz token (please update your configuration)");
+            }
+            StatusCode::TOO_MANY_REQUESTS => {
+                let retry_after = response
+                    .headers()
+                    .get("X-RateLimit-Reset-In")
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .map_or(Duration::from_secs(10), Duration::from_secs);
+                warn!(?retry_after, "hit rate limit");
                 sleep(retry_after).await;
+                debug!("trying again");
             }
-            Err(SubmitError::Error(e)) => break Err(e),
+            other => {
+                bail!("Unexpected status code from ListenBrainz API ({other:?}");
+            }
         }
-    }
-}
-
-enum SubmitError {
-    RateLimit { retry_after: Duration },
-    Error(anyhow::Error),
-}
-
-impl From<anyhow::Error> for SubmitError {
-    fn from(e: anyhow::Error) -> Self {
-        SubmitError::Error(e)
-    }
-}
-
-async fn do_submit(http_client: &Client, url: &str, body: &JsonBody) -> Result<(), SubmitError> {
-    let response = http_client
-        .post(url)
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(body.clone())
-        .send()
-        .await
-        .context("Error sending ListenBrainz submission request")?;
-
-    let status_code = response.status();
-    let retry_after = response
-        .headers()
-        .get("X-RateLimit-Reset-In")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.parse::<u64>().ok())
-        .map_or(Duration::from_secs(10), Duration::from_secs);
-    let response_body = response
-        .bytes()
-        .await
-        .context("Error reading response body")?;
-
-    trace!(?status_code, ?response_body);
-
-    match status_code {
-        StatusCode::OK => Ok(()),
-        StatusCode::UNAUTHORIZED => {
-            Err(anyhow!("Invalid ListenBrainz token (please update your configuration)").into())
-        }
-        StatusCode::TOO_MANY_REQUESTS => Err(SubmitError::RateLimit { retry_after }),
-        other_status => Err(anyhow!("Unexpected status code ({:?})", other_status).into()),
     }
 }
