@@ -629,6 +629,7 @@ name = "listenbrainz-mpd"
 version = "2.1.0"
 dependencies = [
  "anyhow",
+ "bytes",
  "clap",
  "dirs",
  "mpd_client",

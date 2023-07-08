@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 
+use bytes::{BufMut, Bytes, BytesMut};
 use mpd_client::{responses::Song, tag::Tag};
 use serde::Serialize;
 use serde_json::value::RawValue;
@@ -32,25 +33,42 @@ enum Submission<'a> {
     PlayingNow([&'a PlayingNow; 1]),
 }
 
-#[derive(Debug, Serialize)]
-pub(super) struct SerializedSubmission(Box<RawValue>);
+#[derive(Debug, Clone)]
+pub(super) struct JsonBody(Bytes);
 
-pub(super) fn prepare_playing_now(
-    config: &Configuration,
-    song: Song,
-) -> Option<SerializedSubmission> {
+impl JsonBody {
+    /// Create a new JsonBody containing the given value
+    fn new<V: Serialize>(v: &V) -> JsonBody {
+        let mut buf = BytesMut::new();
+        serde_json::to_writer((&mut buf).writer(), v).unwrap();
+        JsonBody(buf.freeze())
+    }
+
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+impl From<JsonBody> for reqwest::Body {
+    fn from(value: JsonBody) -> Self {
+        value.0.into()
+    }
+}
+
+pub(super) fn prepare_playing_now(config: &Configuration, song: Song) -> Option<JsonBody> {
     let playing_now = PlayingNow {
         track_metadata: metadata_from_song(config, song)?,
     };
     let submission = Submission::PlayingNow([&playing_now]);
 
-    let serialized = serde_json::value::to_raw_value(&submission).unwrap();
-    let serialized_length = serialized.get().len();
-
-    if serialized_length <= MAX_SERIALIZED_LISTEN_LENGTH {
-        Some(SerializedSubmission(serialized))
+    let body = JsonBody::new(&submission);
+    if body.len() <= MAX_SERIALIZED_LISTEN_LENGTH {
+        Some(body) // once told me ...
     } else {
-        warn!(serialized_length, "submission would be too large, skipping");
+        warn!(
+            length = body.len(),
+            "submission would be too large, skipping"
+        );
         None
     }
 }
@@ -76,12 +94,11 @@ pub(super) fn serialize_single_listen(
     }
 }
 
-pub(super) fn prepare_completed_listens(listens: &[Box<RawValue>]) -> SerializedSubmission {
+pub(super) fn prepare_completed_listens(listens: &[Box<RawValue>]) -> JsonBody {
     assert!(listens.len() <= MAX_LISTENS_PER_IMPORT);
 
     let submission = Submission::CompletedListens(listens);
-    let serialized = serde_json::value::to_raw_value(&submission).unwrap();
-    SerializedSubmission(serialized)
+    JsonBody::new(&submission)
 }
 
 fn metadata_from_song(config: &Configuration, song: Song) -> Option<TrackMetadata> {

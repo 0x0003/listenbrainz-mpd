@@ -17,7 +17,7 @@ use tokio::{
 };
 use tracing::{debug, error, trace, warn};
 
-use self::api::SerializedSubmission;
+use self::api::JsonBody;
 use crate::{cache_actor::CacheActor, config::Configuration};
 
 /// API sub-path to which listen records are submitted.
@@ -101,10 +101,10 @@ async fn run(
     while let Some(request) = requests.recv().await {
         match request {
             ActorRequest::NowPlaying { song } => {
-                let Some(submission) = api::prepare_playing_now(&config, song) else {
+                let Some(body) = api::prepare_playing_now(&config, song) else {
                     continue;
                 };
-                if let Err(e) = submit(&http_client, &config, &submission)
+                if let Err(e) = submit(&http_client, &config, body)
                     .await
                     .context("Submission of \"Playing Now\" notification failed")
                 {
@@ -120,9 +120,9 @@ async fn run(
                 let mut submissions = cache_actor.load_pending_submissions().await;
                 submissions.push(listen);
 
-                let submission = api::prepare_completed_listens(&submissions);
+                let body = api::prepare_completed_listens(&submissions);
 
-                if let Err(e) = submit(&http_client, &config, &submission).await.context(
+                if let Err(e) = submit(&http_client, &config, body).await.context(
                     submission_failed_error_string(config.submission.enable_cache),
                 ) {
                     error!("{e:#}");
@@ -149,13 +149,9 @@ fn submission_failed_error_string(enable_cache: bool) -> &'static str {
     }
 }
 
-async fn submit(
-    http_client: &Client,
-    config: &Configuration,
-    payload: &SerializedSubmission,
-) -> Result<()> {
+async fn submit(http_client: &Client, config: &Configuration, body: JsonBody) -> Result<()> {
     loop {
-        match do_submit(http_client, submission_url(config), payload).await {
+        match do_submit(http_client, submission_url(config), &body).await {
             Ok(()) => {
                 debug!("submission accepted");
                 break Ok(());
@@ -180,14 +176,11 @@ impl From<anyhow::Error> for SubmitError {
     }
 }
 
-async fn do_submit(
-    http_client: &Client,
-    url: &str,
-    submission: &SerializedSubmission,
-) -> Result<(), SubmitError> {
+async fn do_submit(http_client: &Client, url: &str, body: &JsonBody) -> Result<(), SubmitError> {
     let response = http_client
         .post(url)
-        .json(submission)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(body.clone())
         .send()
         .await
         .context("Error sending ListenBrainz submission request")?;
