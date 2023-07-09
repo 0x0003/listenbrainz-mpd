@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 
+use anyhow::Result;
 use bytes::{BufMut, Bytes, BytesMut};
 use mpd_client::{responses::Song, tag::Tag};
 use serde::Serialize;
@@ -9,6 +10,7 @@ use serde_json::value::RawValue;
 use tracing::warn;
 
 use crate::config::Configuration;
+use crate::{is_valid_mbid, Feedback};
 
 /// Maximum number of tags the ListenBrainz server will accept.
 const MAX_TAGS: usize = 50;
@@ -99,6 +101,34 @@ pub(super) fn prepare_completed_listens(listens: &[Box<RawValue>]) -> JsonBody {
 
     let submission = Submission::CompletedListens(listens);
     JsonBody::new(&submission)
+}
+
+pub(super) fn prepare_recording_mbid_lookup(song: Song) -> Result<LookupRecordingMbid> {
+    let mut tags = song.tags;
+    let song = &song.url;
+
+    let Some(artist_name) = single_value(&mut tags, Tag::Artist, song) else {
+        anyhow::bail!("Cannot look up track without artist tag");
+    };
+
+    let Some(recording_name) = single_value(&mut tags, Tag::Title, song) else {
+        anyhow::bail!("Cannot look up track without title tag");
+    };
+
+    Ok(LookupRecordingMbid {
+        recording_name,
+        artist_name,
+    })
+}
+
+pub(super) fn prepare_feedback_submission(
+    recording_mbid: String,
+    feedback: Feedback,
+) -> SubmitFeedback {
+    SubmitFeedback {
+        recording_mbid,
+        feedback,
+    }
 }
 
 fn metadata_from_song(config: &Configuration, song: Song) -> Option<TrackMetadata> {
@@ -219,6 +249,19 @@ pub struct PlayingNow {
 }
 
 #[derive(Debug, Serialize)]
+pub struct LookupRecordingMbid {
+    recording_name: String,
+    artist_name: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SubmitFeedback {
+    recording_mbid: String,
+    #[serde(rename = "score")]
+    feedback: Feedback,
+}
+
+#[derive(Debug, Serialize)]
 struct TrackMetadata {
     artist_name: String,
     track_name: String,
@@ -279,25 +322,4 @@ fn validate_multiple_mbid(vals: &mut Vec<String>) {
 
         is_valid
     });
-}
-
-/// Validate that a given MBID string conforms to the expected format (dashed lowercase).
-fn is_valid_mbid(mbid: &str) -> bool {
-    if mbid.len() != 36 {
-        return false;
-    }
-
-    for range in [0..8, 9..13, 14..18, 19..23, 24..36] {
-        if mbid[range].chars().any(|c| !c.is_ascii_alphanumeric()) {
-            return false;
-        }
-    }
-
-    for dash_position in [8, 13, 18, 23] {
-        if &mbid[dash_position..=dash_position] != "-" {
-            return false;
-        }
-    }
-
-    true
 }

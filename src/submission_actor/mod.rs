@@ -10,31 +10,51 @@ use mpd_client::responses::Song;
 use once_cell::sync::OnceCell;
 use reqwest::{
     header::{self, HeaderMap, HeaderValue},
-    Client, Method, Request, RequestBuilder, StatusCode,
+    Client, Request, StatusCode,
 };
 use tokio::{
-    sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
+    sync::{
+        mpsc::{self, UnboundedReceiver, UnboundedSender},
+        oneshot,
+    },
     time::sleep,
 };
 use tracing::{debug, error, trace, warn};
 
 use self::api::JsonBody;
-use crate::{cache_actor::CacheActor, config::Configuration};
+use crate::{cache_actor::CacheActor, config::Configuration, Feedback};
 
 /// API sub-path to which listen records are submitted.
 const LISTENBRAINZ_SUBMISSION_PATH: &str = "/1/submit-listens";
+
+/// API sub-path at which a recording MBID can be looked up from textual metadata.
+const LISTENBRAINZ_MBID_LOOKUP_PATH: &str = "/1/metadata/lookup";
+
+/// API sub-path to which recording feedback is submitted.
+const LISTENBRAINZ_FEEDBACK_SUBMISSION_PATH: &str = "/1/feedback/recording-feedback";
 
 fn submission_url(config: &Configuration) -> &'static str {
     static URL: OnceCell<String> = OnceCell::new();
 
     URL.get_or_init(|| {
-        let base = if config.submission.api_url.ends_with('/') {
-            &config.submission.api_url[..config.submission.api_url.len() - 1]
-        } else {
-            &config.submission.api_url
-        };
-
+        let base = config.submission.api_url();
         format!("{base}{LISTENBRAINZ_SUBMISSION_PATH}")
+    })
+}
+
+fn mbid_lookup_url(config: &Configuration) -> &'static str {
+    static URL: OnceCell<String> = OnceCell::new();
+    URL.get_or_init(|| {
+        let base = config.submission.api_url();
+        format!("{base}{LISTENBRAINZ_MBID_LOOKUP_PATH}")
+    })
+}
+
+fn feedback_submission_url(config: &Configuration) -> &'static str {
+    static URL: OnceCell<String> = OnceCell::new();
+    URL.get_or_init(|| {
+        let base = config.submission.api_url();
+        format!("{base}{LISTENBRAINZ_FEEDBACK_SUBMISSION_PATH}")
     })
 }
 
@@ -71,6 +91,30 @@ impl SubmissionActor {
             .send(ActorRequest::Listen { song, timestamp })
             .expect("actor gone");
     }
+
+    /// Look up the recording MBID for a the given song.
+    pub async fn lookup_recording_mbid(&self, song: Song) -> Result<String> {
+        let (tx, rx) = oneshot::channel();
+        self.tx
+            .send(ActorRequest::LookupRecordingMbid {
+                song,
+                responder: tx,
+            })
+            .expect("actor gone");
+        rx.await.expect("actor did not reply")
+    }
+
+    pub async fn submit_feedback(&self, recording_mbid: String, feedback: Feedback) -> Result<()> {
+        let (tx, rx) = oneshot::channel();
+        self.tx
+            .send(ActorRequest::SubmitFeedback {
+                recording_mbid,
+                feedback,
+                responder: tx,
+            })
+            .expect("actor gone");
+        rx.await.expect("actor did not reply")
+    }
 }
 
 fn build_http_client(configuration: &Configuration) -> Client {
@@ -90,8 +134,22 @@ fn build_http_client(configuration: &Configuration) -> Client {
 
 #[derive(Debug)]
 enum ActorRequest {
-    NowPlaying { song: Song },
-    Listen { song: Song, timestamp: u64 },
+    NowPlaying {
+        song: Song,
+    },
+    Listen {
+        song: Song,
+        timestamp: u64,
+    },
+    LookupRecordingMbid {
+        song: Song,
+        responder: oneshot::Sender<Result<String>>,
+    },
+    SubmitFeedback {
+        recording_mbid: String,
+        feedback: Feedback,
+        responder: oneshot::Sender<Result<()>>,
+    },
 }
 
 async fn run(
@@ -137,6 +195,22 @@ async fn run(
                     cache_actor.cache_submissions(submissions);
                 }
             }
+            ActorRequest::LookupRecordingMbid { song, responder } => {
+                let res = lookup_recording_mbid(&http_client, &config, song)
+                    .await
+                    .context("Failed to look up recording MBID");
+                let _ = responder.send(res);
+            }
+            ActorRequest::SubmitFeedback {
+                recording_mbid,
+                feedback,
+                responder,
+            } => {
+                let res = submit_feedback(&http_client, &config, recording_mbid, feedback)
+                    .await
+                    .context("Failed to submit feedback");
+                let _ = responder.send(res);
+            }
         }
     }
 
@@ -162,6 +236,54 @@ async fn submit(http_client: &Client, config: &Configuration, body: JsonBody) ->
     })
     .await
     .context("Failed to send submission")?;
+
+    Ok(())
+}
+
+async fn lookup_recording_mbid(
+    http_client: &Client,
+    config: &Configuration,
+    song: Song,
+) -> Result<String> {
+    let query_params = api::prepare_recording_mbid_lookup(song)?;
+
+    let response = do_http_request(http_client, |c| {
+        c.get(mbid_lookup_url(config))
+            .query(&query_params)
+            .build()
+            .unwrap()
+    })
+    .await?;
+
+    #[derive(Debug, serde::Deserialize)]
+    struct MetadataResponse {
+        #[serde(default)]
+        recording_mbid: Option<String>,
+    }
+
+    let response =
+        serde_json::from_slice::<MetadataResponse>(&response).context("Invalid response")?;
+
+    response
+        .recording_mbid
+        .ok_or_else(|| anyhow!("ListenBrainz does not know this recording"))
+}
+
+async fn submit_feedback(
+    http_client: &Client,
+    config: &Configuration,
+    recording_mbid: String,
+    feedback: Feedback,
+) -> Result<()> {
+    let req = api::prepare_feedback_submission(recording_mbid, feedback);
+
+    do_http_request(http_client, |c| {
+        c.post(feedback_submission_url(config))
+            .json(&req)
+            .build()
+            .unwrap()
+    })
+    .await?;
 
     Ok(())
 }

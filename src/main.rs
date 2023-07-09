@@ -15,12 +15,14 @@ use mpd_client::{
     client::{Client, ConnectionEvent, ConnectionEvents, Subsystem},
     commands,
     responses::{PlayState, Song, SongInQueue},
+    tag::Tag,
 };
+use serde::{Serialize, Serializer};
 use tokio::{
     net::{TcpStream, UnixStream},
     time::{sleep, Sleep},
 };
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, info_span, trace, warn, Instrument};
 use tracing_subscriber::EnvFilter;
 
 use crate::cache_actor::CacheActor;
@@ -29,6 +31,9 @@ use crate::submission_actor::SubmissionActor;
 /// The maximum time you have to listen to a song before it will count as a listen. Set to 4
 /// minutes as per the recommendations in the ListenBrainz documentation.
 const MAX_REQUIRED_LISTEN_TIME: Duration = Duration::from_secs(4 * 60);
+
+/// Name of the client-to-client channel used to send ListenBrainz feedback commands.
+const FEEDBACK_CHANNEL_NAME: &str = "listenbrainz_feedback";
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
@@ -141,6 +146,11 @@ async fn run(
 
     let listen_required = required_time_for_song(song.as_ref());
 
+    // Subscribe to the client-to-client channel used for feedback
+    mpd_client
+        .command(commands::SubscribeToChannel(FEEDBACK_CHANNEL_NAME))
+        .await?;
+
     let mut state = State {
         play_state,
         song,
@@ -169,8 +179,14 @@ async fn run(
         tokio::select! {
             event = connection_events.next() => {
                 match event {
-                    Some(ConnectionEvent::SubsystemChange(Subsystem::Player | Subsystem::Queue)) => (),
-                    Some(ConnectionEvent::SubsystemChange(_)) => continue,
+                    Some(ConnectionEvent::SubsystemChange(subsystem)) => {
+                        handle_subsystem_event(
+                            subsystem,
+                            &mut state,
+                            &mpd_client,
+                            &http_actor,
+                        ).await?;
+                    }
                     Some(ConnectionEvent::ConnectionClosed(e)) => {
                         error!(error = ?e, "MPD error");
                         return Err(e.into());
@@ -180,13 +196,30 @@ async fn run(
                         return Ok(());
                     }
                 }
-
-                handle_state_change(&mut state, &mpd_client, http_actor.clone()).await?;
             }
             _ = &mut state.listen_finished, if state.should_poll() => {
                 handle_listen_complete(&mut state, &http_actor);
             }
         }
+    }
+}
+
+async fn handle_subsystem_event(
+    subsystem: Subsystem,
+    state: &mut State,
+    mpd_client: &Client,
+    http_actor: &SubmissionActor,
+) -> Result<()> {
+    trace!(?subsystem, "Subsystem change");
+    match subsystem {
+        // Something about the player changed (e.g. play state, current song)
+        Subsystem::Player | Subsystem::Queue => {
+            handle_state_change(state, mpd_client, http_actor.clone()).await
+        }
+        // Received a message on one of our subscribed channels (for feedback)
+        Subsystem::Message => handle_message_event(state, mpd_client, http_actor).await,
+        // Nothing relevant for us
+        _ => Ok(()),
     }
 }
 
@@ -269,6 +302,118 @@ fn handle_listen_complete(state: &mut State, http_actor: &SubmissionActor) {
     http_actor.listen(song.song, timestamp);
 }
 
+async fn handle_message_event(
+    state: &State,
+    mpd_client: &Client,
+    http_actor: &SubmissionActor,
+) -> Result<()> {
+    // Read our messages
+    let messages = mpd_client
+        .command(commands::ReadChannelMessages)
+        .await
+        .context("Failed to read messages")?;
+
+    let Some((_, message)) = messages
+        .into_iter()
+        .find(|(channel, _)| channel == FEEDBACK_CHANNEL_NAME)
+    else {
+        debug!("no feedback message");
+        return Ok(());
+    };
+    debug!(?message, "feedback command received");
+
+    let Some(feedback) = Feedback::from_command(&message) else {
+        warn!(?message, "invalid feedback command, ignoring");
+        return Ok(());
+    };
+
+    let Some(song) = state.song.clone().map(|s| s.song) else {
+        debug!("no current song to submit feedback for");
+        return Ok(());
+    };
+
+    let span = info_span!("submit_feedback", ?feedback, song = ?song.url);
+    tokio::spawn(submit_feedback(song, http_actor.clone(), feedback).instrument(span));
+
+    Ok(())
+}
+
+async fn submit_feedback(mut song: Song, http_actor: SubmissionActor, feedback: Feedback) {
+    debug!("submitting feedback");
+
+    let mut mbid = song
+        .tags
+        .remove(&Tag::MusicBrainzRecordingId)
+        .and_then(|mut v| {
+            trace!("found existing recording MBID tag");
+            if v.len() > 1 {
+                warn!(
+                    values = v.len(),
+                    "more than one recording MBID tag, ignoring all but the first"
+                );
+            }
+
+            let mbid = v.remove(0);
+
+            if is_valid_mbid(&mbid) {
+                Some(mbid)
+            } else {
+                warn!("invalid recording MBID, ignoring");
+                None
+            }
+        });
+
+    if mbid.is_none() {
+        // Need to look up the mapping on ListenBrainz
+        trace!("requesting MBID mapping from ListenBrainz API");
+        match http_actor.lookup_recording_mbid(song.clone()).await {
+            Ok(id) => mbid = Some(id),
+            Err(e) => {
+                error!("Cannot submit feedback: {e:#}");
+                return;
+            }
+        }
+    }
+
+    let mbid = mbid.unwrap();
+    trace!(?mbid);
+
+    if let Err(e) = http_actor.submit_feedback(mbid, feedback).await {
+        error!("{e:#}");
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Feedback {
+    Hate,
+    Clear,
+    Love,
+}
+
+impl Feedback {
+    fn from_command(s: &str) -> Option<Feedback> {
+        match s {
+            "love" => Some(Feedback::Love),
+            "hate" => Some(Feedback::Hate),
+            "clear" => Some(Feedback::Clear),
+            _ => None,
+        }
+    }
+}
+
+impl Serialize for Feedback {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_i8(match self {
+            Feedback::Love => 1,
+            Feedback::Hate => -1,
+            Feedback::Clear => 0,
+        })
+    }
+}
+
 fn is_same_song(a: Option<&SongInQueue>, b: Option<&SongInQueue>) -> bool {
     let Some((a, b)) = a.zip(b) else { return false };
     a.id == b.id && a.position == b.position && a.song.url == b.song.url
@@ -301,4 +446,25 @@ fn required_time_for_song(song: Option<&SongInQueue>) -> Duration {
 
 fn song_url(s: Option<&Song>) -> &str {
     s.map_or("<none>", |s| &*s.url)
+}
+
+/// Validate that a given MBID string conforms to the expected format (dashed lowercase).
+fn is_valid_mbid(mbid: &str) -> bool {
+    if mbid.len() != 36 {
+        return false;
+    }
+
+    for range in [0..8, 9..13, 14..18, 19..23, 24..36] {
+        if mbid[range].chars().any(|c| !c.is_ascii_alphanumeric()) {
+            return false;
+        }
+    }
+
+    for dash_position in [8, 13, 18, 23] {
+        if &mbid[dash_position..=dash_position] != "-" {
+            return false;
+        }
+    }
+
+    true
 }

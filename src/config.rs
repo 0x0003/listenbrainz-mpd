@@ -150,6 +150,17 @@ pub struct Submission {
     pub cache_file: Option<PathBuf>,
 }
 
+impl Submission {
+    /// Returns the configured API base URL without a trailing slash.
+    pub fn api_url(&self) -> &str {
+        if self.api_url.ends_with('/') {
+            &self.api_url[..self.api_url.len() - 1]
+        } else {
+            &self.api_url
+        }
+    }
+}
+
 fn default_cache() -> bool {
     true
 }
