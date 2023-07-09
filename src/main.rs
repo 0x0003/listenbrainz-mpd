@@ -47,11 +47,15 @@ async fn main() -> Result<()> {
         return config::create_default_config();
     }
 
-    let config = config::load(args)?;
+    let config = config::load(args.config)?;
 
     let cache_actor = CacheActor::start(&config)?;
     let (mpd_client, state_changes) = connect(&config.mpd).await?;
     let http_actor = SubmissionActor::start(config, cache_actor).await?;
+
+    if let Some(feedback) = args.send_feedback {
+        return send_feedback(mpd_client, feedback).await;
+    }
 
     run(mpd_client, state_changes, http_actor).await
 }
@@ -65,6 +69,21 @@ pub struct CliArgs {
     /// Create a configuration file in the default location and exit
     #[clap(long, action = ArgAction::SetTrue, exclusive = true)]
     create_default_config: bool,
+    /// Submit feedback for the currently playing song and exit.
+    #[clap(long, exclusive = true, value_enum, value_name = "FEEDBACK")]
+    send_feedback: Option<Feedback>,
+}
+
+async fn send_feedback(mpd_client: Client, feedback: Feedback) -> Result<()> {
+    mpd_client
+        .command(commands::SendChannelMessage::new(
+            FEEDBACK_CHANNEL_NAME,
+            feedback.as_command(),
+        ))
+        .await
+        .context("Failed to send feedback message (Is a daemon instance running?)")?;
+
+    Ok(())
 }
 
 async fn connect(mpd_config: &config::Mpd) -> Result<(Client, ConnectionEvents)> {
@@ -383,7 +402,7 @@ async fn submit_feedback(mut song: Song, http_actor: SubmissionActor, feedback: 
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
 pub enum Feedback {
     Hate,
     Clear,
@@ -397,6 +416,14 @@ impl Feedback {
             "hate" => Some(Feedback::Hate),
             "clear" => Some(Feedback::Clear),
             _ => None,
+        }
+    }
+
+    fn as_command(&self) -> &'static str {
+        match self {
+            Feedback::Hate => "hate",
+            Feedback::Clear => "clear",
+            Feedback::Love => "love",
         }
     }
 }

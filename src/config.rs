@@ -8,8 +8,6 @@ use anyhow::{anyhow, bail, Context, Error, Result};
 use serde::Deserialize;
 use tracing::debug;
 
-use crate::CliArgs;
-
 /// The default configuration file.
 pub const DEFAULT: &[u8] = include_str!("../config.toml.sample").as_bytes();
 
@@ -20,8 +18,8 @@ fn default_path() -> PathBuf {
     p
 }
 
-pub fn load(args: CliArgs) -> Result<Configuration> {
-    let path = &args.config.unwrap_or_else(default_path);
+pub fn load(path: Option<PathBuf>) -> Result<Configuration> {
+    let path = &path.unwrap_or_else(default_path);
 
     debug!(?path, "loading configuration file");
 
