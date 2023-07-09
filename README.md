@@ -6,6 +6,7 @@ A [ListenBrainz](https://listenbrainz.org) submission client for [MPD](https://w
 
  - Submission of listen entries, including "Now Playing" entries
  - Full metadata support, including transmission of [MusicBrainz](https://musicbrainz.org) IDs
+ - Ability to submit feedback (Love/Hate) for individual recordings
 
 ## Usage
 
@@ -27,6 +28,8 @@ A [ListenBrainz](https://listenbrainz.org) submission client for [MPD](https://w
      | Linux     | `$XDG_CONFIG_HOME/listenbrainz-mpd/config.toml`                  |
      | macOS     | `$HOME/Library/Application Support/listenbrainz-mpd/config.toml` |
      | Windows   | `{FOLDERID_LocalAppData}\listenbrainz-mpd\config.toml`           |
+
+     You can use the `--create-default-config` option to have this file automatically created for you.
 
   3. Run the binary, or install the provided [systemd service file](./listenbrainz-mpd.service).
 

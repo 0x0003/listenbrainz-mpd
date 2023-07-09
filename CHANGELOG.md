@@ -1,3 +1,11 @@
+# 2.2.0 (2023-07-09)
+
+ - Implement ListenBrainz feedback, giving you the ability to mark recordings as "Loved" or "Hated" (#10, requested by oovaga).
+   - Accessible by sending messages to the `listenbrainz_feedback` MPD client-to-client channel.
+   - As a user, you can use the `mpc` command-line tool like `mpc sendmessage listenbrainz_feedback love`
+   - Alternatively, you can use the `--send-feedback` option
+ - Fix a bug that prevented a "Now Playing" notification being sent for the first track after starting playback.
+
 # 2.1.0 (2023-03-12)
 
  - Remember Listens that failed to submit and attempt to submit them again later until they are accepted.
