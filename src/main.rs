@@ -25,14 +25,15 @@ use tokio::{
 use tracing::{debug, error, info, info_span, trace, warn, Instrument};
 use tracing_subscriber::EnvFilter;
 
-use crate::cache_actor::CacheActor;
-use crate::submission_actor::SubmissionActor;
+use crate::{cache_actor::CacheActor, submission_actor::SubmissionActor};
 
-/// The maximum time you have to listen to a song before it will count as a listen. Set to 4
-/// minutes as per the recommendations in the ListenBrainz documentation.
+/// The maximum time you have to listen to a song before it will count as a
+/// listen. Set to 4 minutes as per the recommendations in the ListenBrainz
+/// documentation.
 const MAX_REQUIRED_LISTEN_TIME: Duration = Duration::from_secs(4 * 60);
 
-/// Name of the client-to-client channel used to send ListenBrainz feedback commands.
+/// Name of the client-to-client channel used to send ListenBrainz feedback
+/// commands.
 const FEEDBACK_CHANNEL_NAME: &str = "listenbrainz_feedback";
 
 #[tokio::main(flavor = "current_thread")]
@@ -134,18 +135,20 @@ struct State {
     play_state: PlayState,
     /// The current playing song, if any.
     song: Option<SongInQueue>,
-    /// The point in time at which the current listen segment was started. This is used to
-    /// calculate the real elapsed time when processing pauses/unpauses.
+    /// The point in time at which the current listen segment was started. This
+    /// is used to calculate the real elapsed time when processing
+    /// pauses/unpauses.
     listen_started: Instant,
-    /// The system timestamp when the listen was started. This is used during submission to the
-    /// ListenBrainz API.
+    /// The system timestamp when the listen was started. This is used during
+    /// submission to the ListenBrainz API.
     listen_timestamp: SystemTime,
-    /// The required remaining time the current song needs to play before it will count as a
-    /// listen.
+    /// The required remaining time the current song needs to play before it
+    /// will count as a listen.
     listen_required: Duration,
     /// The future that completes when the required duration is reached.
     listen_finished: Pin<Box<Sleep>>,
-    /// `true` if a listen record for the current song has already been submitted.
+    /// `true` if a listen record for the current song has already been
+    /// submitted.
     listen_submitted: bool,
 }
 
@@ -252,8 +255,8 @@ async fn handle_state_change(
     let same_song = is_same_song(state.song.as_ref(), new_song.as_ref());
 
     if same_song && state.play_state == new_play_state {
-        // Nothing relevant changed. This happens e.g. when the status of the repeat or shuffle
-        // options is changed
+        // Nothing relevant changed. This happens e.g. when the status of the repeat or
+        // shuffle options is changed
         trace!("nothing changed");
     } else if same_song {
         if state.play_state != PlayState::Playing && new_play_state == PlayState::Playing {
@@ -454,13 +457,13 @@ async fn get_status_and_song(client: &Client) -> Result<(PlayState, Option<SongI
         .map_err(Into::into)
 }
 
-/// Calculate the required listen duration for the given song to count as a completed ListenBrainz
-/// listen.
+/// Calculate the required listen duration for the given song to count as a
+/// completed ListenBrainz listen.
 fn required_time_for_song(song: Option<&SongInQueue>) -> Duration {
     if let Some(s) = song {
         if let Some(song_duration) = s.song.duration {
-            // A song counts as listened if either half its duration or MAX_REQUIRED_LISTEN_TIME,
-            // whichever is lower, was listened to
+            // A song counts as listened if either half its duration or
+            // MAX_REQUIRED_LISTEN_TIME, whichever is lower, was listened to
             cmp::min(song_duration / 2, MAX_REQUIRED_LISTEN_TIME)
         } else {
             warn!("song with unknown duration, assuming 4 minutes listen time");
@@ -475,7 +478,8 @@ fn song_url(s: Option<&Song>) -> &str {
     s.map_or("<none>", |s| &*s.url)
 }
 
-/// Validate that a given MBID string conforms to the expected format (dashed lowercase).
+/// Validate that a given MBID string conforms to the expected format (dashed
+/// lowercase).
 fn is_valid_mbid(mbid: &str) -> bool {
     if mbid.len() != 36 {
         return false;

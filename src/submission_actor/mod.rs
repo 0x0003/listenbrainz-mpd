@@ -27,7 +27,8 @@ use crate::{cache_actor::CacheActor, config::Configuration, Feedback};
 /// API sub-path to which listen records are submitted.
 const LISTENBRAINZ_SUBMISSION_PATH: &str = "/1/submit-listens";
 
-/// API sub-path at which a recording MBID can be looked up from textual metadata.
+/// API sub-path at which a recording MBID can be looked up from textual
+/// metadata.
 const LISTENBRAINZ_MBID_LOOKUP_PATH: &str = "/1/metadata/lookup";
 
 /// API sub-path to which recording feedback is submitted.

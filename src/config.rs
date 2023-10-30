@@ -79,8 +79,8 @@ pub fn create_default_config() -> Result<()> {
             .with_context(|| format!("Failed to create directories: {}", p.display()))?;
     }
 
-    // Create the actual config file and write the contents into it, but only if it does not
-    // already exist
+    // Create the actual config file and write the contents into it, but only if it
+    // does not already exist
     match File::options().write(true).create_new(true).open(&path) {
         Ok(mut f) => {
             f.write_all(DEFAULT).with_context(|| {

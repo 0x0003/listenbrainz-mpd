@@ -9,8 +9,7 @@ use serde::Serialize;
 use serde_json::value::RawValue;
 use tracing::warn;
 
-use crate::config::Configuration;
-use crate::{is_valid_mbid, Feedback};
+use crate::{config::Configuration, is_valid_mbid, Feedback};
 
 /// Maximum number of tags the ListenBrainz server will accept.
 const MAX_TAGS: usize = 50;
@@ -21,9 +20,9 @@ const MAX_SINGLE_TAG_LENGTH: usize = 64;
 /// Maximum length in bytes of a single listen submission.
 const MAX_SERIALIZED_LISTEN_LENGTH: usize = 10240;
 
-/// Maximum number of listens that can be included in an import request. The ListenBrainz server
-/// documents a limit of 100, subtract one to ensure remaining space for the surrounding JSON
-/// padding
+/// Maximum number of listens that can be included in an import request. The
+/// ListenBrainz server documents a limit of 100, subtract one to ensure
+/// remaining space for the surrounding JSON padding
 const MAX_LISTENS_PER_IMPORT: usize = 99;
 
 #[derive(Debug, Serialize)]
