@@ -1,3 +1,12 @@
+# 2.3.0 (2023-10-31)
+
+ - Support loading key configuration values from environment variables.
+   - The configuration file may now be absent if the required values can be loaded from the environment.
+   - The ListenBrainz Token can be set using the `LISTENBRAINZ_TOKEN` variable.
+     This is the only required configuration value.
+   - Support the `MPD_HOST` and `MPD_PORT` environment variables as used by other MPD tools like `mpc`.
+     If these are not specified and the configuration file does not configure the MPD address either, the default address `localhost:6600` is assumed.
+
 # 2.2.0 (2023-07-09)
 
  - Implement ListenBrainz feedback, giving you the ability to mark recordings as "Loved" or "Hated" (#10, requested by oovaga).
