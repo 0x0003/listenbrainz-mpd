@@ -155,8 +155,8 @@ fn metadata_from_song(config: &Configuration, song: Song) -> Option<TrackMetadat
         work_mbids: tags.remove(&Tag::MusicBrainzWorkId).unwrap_or_default(),
         tracknumber: single_value(&mut tags, Tag::Track, song),
         duration_ms: duration.map(|d| d.as_millis()),
-        tags: if config.submission.genres_as_folksonomy {
-            folksonomy_tags(&mut tags, config.submission.genre_separator)
+        tags: if config.submit_genres_as_folksonomy {
+            folksonomy_tags(&mut tags, config.genre_separator)
         } else {
             Vec::new()
         },

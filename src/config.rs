@@ -1,6 +1,7 @@
 use std::{
+    env,
     fs::{self, File},
-    io::{ErrorKind, Write},
+    io::{self, ErrorKind, Write},
     path::PathBuf,
 };
 
@@ -11,10 +12,32 @@ use tracing::debug;
 /// The default configuration file.
 pub const DEFAULT: &[u8] = include_str!("../config.toml.sample").as_bytes();
 
+/// Parsed & validated configuration.
+#[derive(Debug)]
+pub struct Configuration {
+    /// The user token
+    pub token: String,
+    /// The submission API URL (without a trailing slash)
+    pub api_url: String,
+    /// The MPD host
+    pub mpd_host: String,
+    /// The MPD port
+    pub mpd_port: u16,
+    /// The MPD server password
+    pub mpd_password: Option<String>,
+    /// Whether to enable caching failed submissions
+    pub enable_cache: bool,
+    /// Path to the file used for caching listens
+    pub cache_file: PathBuf,
+    /// Whether to submit genre tags
+    pub submit_genres_as_folksonomy: bool,
+    /// Separator character for single-value genre tags
+    pub genre_separator: Option<char>,
+}
+
 fn default_path() -> PathBuf {
     let mut p = dirs::config_dir().expect("no config directory on this platform");
-    p.push(env!("CARGO_PKG_NAME"));
-    p.push("config.toml");
+    p.push(concat!(env!("CARGO_PKG_NAME"), "/config.toml"));
     p
 }
 
@@ -23,51 +46,151 @@ pub fn load(path: Option<PathBuf>) -> Result<Configuration> {
 
     debug!(?path, "loading configuration file");
 
-    let config = fs::read_to_string(path)
-        .with_context(|| format!("Failed to read configuration file at {}", path.display()))?;
+    // Load configuration file or the default base config
+    let mut config = match fs::read_to_string(path) {
+        Ok(c) => {
+            // Configuration file exists, parse it
+            toml::from_str(&c).with_context(|| {
+                format!("Failed to parse configuration file at {}", path.display())
+            })?
+        }
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            // Configuration file was not found, use the default config
+            debug!("configuration file not found");
+            RawConfiguration::default()
+        }
+        Err(e) => {
+            return Err(anyhow::Error::new(e).context(format!(
+                "Failed to read configuration file at {}",
+                path.display()
+            )));
+        }
+    };
 
-    let mut config: Configuration = toml::from_str(&config)
-        .with_context(|| format!("Failed to parse configuration file at {}", path.display()))?;
-
-    if let Token::File { token_file } = &config.submission.token {
-        let token = fs::read_to_string(token_file)
-            .with_context(|| format!("Failed to read token file {}", token_file.display()))?;
-        config.submission.token = Token::Inline { token };
+    // Check if both `submission.token` and `submission.token_file` are given
+    if config.submission.token.is_some() && config.submission.token_file.is_some() {
+        bail!("`submission.token_file` cannot be set when `submission.token` is also set");
     }
 
-    if config.mpd.password.is_none() {
-        if let Some(pw_file) = &config.mpd.password_file {
-            let password = fs::read_to_string(pw_file)
-                .with_context(|| format!("Failed to read password file {}", pw_file.display()))?;
-            config.mpd.password = Some(password);
+    // Check if both `mpd.password` and `mpd.password_file` are given
+    if config.mpd.password.is_some() && config.mpd.password_file.is_some() {
+        bail!("`mpd.password_file` cannot be set when `mpd.password` is also set");
+    }
+
+    // The token can be specified using the LISTENBRAINZ_TOKEN environment variable
+    if let Some(token) = env_var("LISTENBRAINZ_TOKEN")? {
+        debug!("found token in environment variable");
+        config.submission.token = Some(token);
+    }
+
+    // Read `submission.token_file` if the token isn't known by this point
+    if let (None, Some(token_file)) = (&config.submission.token, config.submission.token_file) {
+        debug!(?token_file, "loading token from `submission.token_file`");
+        let token = fs::read_to_string(&token_file).with_context(|| {
+            format!(
+                "Failed to read `submission.token_file` at {}",
+                token_file.display()
+            )
+        })?;
+        config.submission.token = Some(token.trim().to_owned());
+    }
+
+    // The MPD address and password can be specified in the MPD_HOST and MPD_PORT
+    // environment variables (compatible with tools like MPC)
+    if let Some(mpd_host) = env_var("MPD_HOST")? {
+        // The syntax of the value is `password@host`, with the password part
+        // optional
+        if let Some((password, host)) = mpd_host.split_once('@') {
+            debug!("found MPD_HOST environment variable with host and password");
+            config.mpd.address = Some(host.to_owned());
+            config.mpd.password = Some(password.to_owned());
+        } else {
+            debug!("found MPD_HOST environment variable with only host");
+            config.mpd.address = Some(mpd_host);
         }
     }
 
-    validate(&mut config).context("Invalid configuration")?;
+    // Read `mpd.password_file` if the password isn't known at this point
+    if let (None, Some(password_file)) = (&config.mpd.password, config.mpd.password_file) {
+        debug!(
+            ?password_file,
+            "loading MPD password from `mpd.password_file"
+        );
+        let password = fs::read_to_string(&password_file).with_context(|| {
+            format!(
+                "Failed to read `mpd.password_file` at {}",
+                password_file.display()
+            )
+        })?;
+        config.mpd.password = Some(password.trim().to_owned());
+    }
 
-    Ok(config)
+    let token = match config.submission.token {
+        Some(token) if token.is_empty() => bail!("ListenBrainz token value cannot be empty"),
+        Some(token) => token,
+        None => bail!("Could not find ListenBrainz token in configuration or environment"),
+    };
+
+    // Remove trailing slashes from configured API URL or fall back to default
+    let api_url = if let Some(url) = config.submission.api_url {
+        let url = url.trim_end_matches('/');
+        if url.is_empty() {
+            bail!("`submission.api_url` cannot be empty");
+        } else {
+            url.to_owned()
+        }
+    } else {
+        String::from("https://api.listenbrainz.org")
+    };
+
+    // Determine the MPD port from either the configuration address string or the
+    // MPD_PORT environment variable, or fall back to the default port
+    let mpd_port = if let Some(port) = env_var("MPD_PORT")? {
+        debug!("found MPD_PORT environment variable");
+        port.parse()
+            .with_context(|| format!("Invalid MPD_PORT value: {port:?}"))?
+    } else if let Some((h, p)) = config.mpd.address.as_deref().and_then(split_address_port) {
+        let port = p
+            .parse()
+            .with_context(|| format!("Invalid port in `mpd.address`: {p:?}"))?;
+        // Remove the port from the host string
+        config.mpd.address = Some(h.to_owned());
+        port
+    } else {
+        // Default port
+        6600
+    };
+
+    let mpd_host = match config.mpd.address {
+        Some(host) if host.is_empty() => bail!("MPD host cannot be empty"),
+        Some(host) => host,
+        None => String::from("localhost"),
+    };
+
+    Ok(Configuration {
+        token,
+        api_url,
+        mpd_host,
+        mpd_port,
+        mpd_password: config.mpd.password,
+        enable_cache: config.submission.enable_cache,
+        cache_file: dirs::data_local_dir()
+            .expect("No state/cache directory")
+            .join("listenbrainz-mpd-cache.sqlite3"),
+        submit_genres_as_folksonomy: config.submission.genres_as_folksonomy,
+        genre_separator: config.submission.genre_separator,
+    })
 }
 
-fn validate(config: &mut Configuration) -> Result<()> {
-    if config.submission.token.value().is_empty() {
-        bail!("User token cannot be empty");
+/// Parse the port from an address string of the form `address:port`. Returns
+/// the host portion and the port portion if found, None otherwise.
+fn split_address_port(address: &str) -> Option<(&str, &str)> {
+    if address.starts_with('/') {
+        // Unix socket path, don't attempt to parse
+        return None;
     }
 
-    if config.submission.api_url.is_empty() {
-        bail!("API URL cannot be empty");
-    }
-
-    if config.mpd.address.is_empty() {
-        bail!("MPD address cannot be empty");
-    }
-
-    if let Some(pw) = &config.mpd.password {
-        if pw.is_empty() {
-            config.mpd.password = None;
-        }
-    }
-
-    Ok(())
+    address.rsplit_once(':')
 }
 
 pub fn create_default_config() -> Result<()> {
@@ -108,83 +231,53 @@ pub fn create_default_config() -> Result<()> {
     }
 }
 
-#[derive(Debug, Deserialize)]
-pub struct Configuration {
-    pub submission: Submission,
-    #[serde(default)]
-    pub mpd: Mpd,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-pub enum Token {
-    Inline { token: String },
-    File { token_file: PathBuf },
-}
-
-impl Token {
-    pub fn value(&self) -> &str {
-        if let Token::Inline { token } = self {
-            token.trim()
-        } else {
-            panic!("Token value was not determined while parsing.");
-        }
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub struct Submission {
-    #[serde(flatten)]
-    pub token: Token,
-    #[serde(default = "default_api_url")]
-    pub api_url: String,
-    #[serde(default = "genres_as_folksonomy")]
-    pub genres_as_folksonomy: bool,
-    #[serde(default)]
-    pub genre_separator: Option<char>,
-    #[serde(default = "default_cache")]
-    pub enable_cache: bool,
-    #[serde(default)]
-    pub cache_file: Option<PathBuf>,
-}
-
-impl Submission {
-    /// Returns the configured API base URL without a trailing slash.
-    pub fn api_url(&self) -> &str {
-        if self.api_url.ends_with('/') {
-            &self.api_url[..self.api_url.len() - 1]
-        } else {
-            &self.api_url
-        }
-    }
-}
-
-fn default_cache() -> bool {
-    true
-}
-
-fn default_api_url() -> String {
-    String::from("https://api.listenbrainz.org")
-}
-
-fn genres_as_folksonomy() -> bool {
-    true
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct RawConfiguration {
+    submission: RawSubmissionConfig,
+    mpd: RawMpdConfig,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(default)]
-pub struct Mpd {
-    pub address: String,
-    pub password: Option<String>,
-    pub password_file: Option<PathBuf>,
+struct RawSubmissionConfig {
+    token: Option<String>,
+    token_file: Option<PathBuf>,
+    api_url: Option<String>,
+    genres_as_folksonomy: bool,
+    genre_separator: Option<char>,
+    enable_cache: bool,
+    cache_file: Option<PathBuf>,
 }
 
-impl Default for Mpd {
+impl Default for RawSubmissionConfig {
     fn default() -> Self {
-        Mpd {
-            address: String::from("127.0.0.1:6600"),
-            password: None,
-            password_file: None,
+        RawSubmissionConfig {
+            token: None,
+            token_file: None,
+            api_url: None,
+            genres_as_folksonomy: true,
+            genre_separator: None,
+            enable_cache: true,
+            cache_file: None,
         }
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct RawMpdConfig {
+    address: Option<String>,
+    password: Option<String>,
+    password_file: Option<PathBuf>,
+}
+
+/// Load the value of the environment variable with the given name.
+fn env_var(name: &str) -> Result<Option<String>> {
+    match env::var(name) {
+        Ok(value) => Ok(Some(value)),
+        Err(env::VarError::NotPresent) => Ok(None),
+        Err(other) => Err(anyhow::Error::new(other)
+            .context(format!("Failed to read environment variable {name}"))),
     }
 }

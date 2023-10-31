@@ -11,6 +11,7 @@ use std::{
 
 use anyhow::{Context, Result};
 use clap::{ArgAction, Parser};
+use config::Configuration;
 use mpd_client::{
     client::{Client, ConnectionEvent, ConnectionEvents, Subsystem},
     commands,
@@ -48,10 +49,10 @@ async fn main() -> Result<()> {
         return config::create_default_config();
     }
 
-    let config = config::load(args.config)?;
+    let config = config::load(args.config).context("Failed to load configuration")?;
 
     let cache_actor = CacheActor::start(&config)?;
-    let (mpd_client, state_changes) = connect(&config.mpd).await?;
+    let (mpd_client, state_changes) = connect(&config).await?;
     let http_actor = SubmissionActor::start(config, cache_actor).await?;
 
     if let Some(feedback) = args.send_feedback {
@@ -87,35 +88,34 @@ async fn send_feedback(mpd_client: Client, feedback: Feedback) -> Result<()> {
     Ok(())
 }
 
-async fn connect(mpd_config: &config::Mpd) -> Result<(Client, ConnectionEvents)> {
-    let password = mpd_config.password.as_deref();
+async fn connect(config: &Configuration) -> Result<(Client, ConnectionEvents)> {
+    let password = config.mpd_password.as_deref();
 
-    if mpd_config.address.starts_with('/') {
-        // If the address value starts with a slash, assume it's a path to a Unix socket
-        connect_unix(Path::new(&mpd_config.address), password)
+    if config.mpd_host.starts_with('/') {
+        // If the host value starts with a slash, assume it's a path to a Unix socket
+        connect_unix(Path::new(&config.mpd_host), password)
+            .await
+            .with_context(|| format!("Failed to connect via Unix socket at {}", config.mpd_host))
+    } else {
+        // Otherwise assume it's a hostname or bare IP address
+        connect_tcp(&config.mpd_host, config.mpd_port, password)
             .await
             .with_context(|| {
                 format!(
-                    "Failed to connect via Unix socket at {}",
-                    mpd_config.address
+                    "Failed to connect via TCP to {} port {}",
+                    config.mpd_host, config.mpd_port
                 )
             })
-    } else {
-        // Otherwise assume it's an IP address/hostname
-        connect_tcp(&mpd_config.address, password)
-            .await
-            .with_context(|| format!("Failed to connect via TCP to {}", mpd_config.address))
     }
 }
 
-async fn connect_tcp(address: &str, password: Option<&str>) -> Result<(Client, ConnectionEvents)> {
-    debug!(?address, "connecting via TCP");
-
-    let (address, port) = address.rsplit_once(':').unwrap_or((address, "6600"));
-
-    let port = port.parse().context("Failed to parse port")?;
-
-    let socket = TcpStream::connect((address, port)).await?;
+async fn connect_tcp(
+    host: &str,
+    port: u16,
+    password: Option<&str>,
+) -> Result<(Client, ConnectionEvents)> {
+    debug!(?host, port, "connecting via TCP");
+    let socket = TcpStream::connect((host, port)).await?;
     Client::connect_with_password_opt(socket, password)
         .await
         .map_err(Into::into)

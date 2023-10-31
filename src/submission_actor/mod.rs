@@ -38,7 +38,7 @@ fn submission_url(config: &Configuration) -> &'static str {
     static URL: OnceCell<String> = OnceCell::new();
 
     URL.get_or_init(|| {
-        let base = config.submission.api_url();
+        let base = &config.api_url;
         format!("{base}{LISTENBRAINZ_SUBMISSION_PATH}")
     })
 }
@@ -46,7 +46,7 @@ fn submission_url(config: &Configuration) -> &'static str {
 fn mbid_lookup_url(config: &Configuration) -> &'static str {
     static URL: OnceCell<String> = OnceCell::new();
     URL.get_or_init(|| {
-        let base = config.submission.api_url();
+        let base = &config.api_url;
         format!("{base}{LISTENBRAINZ_MBID_LOOKUP_PATH}")
     })
 }
@@ -54,7 +54,7 @@ fn mbid_lookup_url(config: &Configuration) -> &'static str {
 fn feedback_submission_url(config: &Configuration) -> &'static str {
     static URL: OnceCell<String> = OnceCell::new();
     URL.get_or_init(|| {
-        let base = config.submission.api_url();
+        let base = &config.api_url;
         format!("{base}{LISTENBRAINZ_FEEDBACK_SUBMISSION_PATH}")
     })
 }
@@ -122,7 +122,7 @@ fn build_http_client(configuration: &Configuration) -> Client {
     let mut headers = HeaderMap::new();
     headers.insert(
         header::AUTHORIZATION,
-        HeaderValue::from_str(&format!("Token {}", configuration.submission.token.value()))
+        HeaderValue::from_str(&format!("Token {}", configuration.token))
             .expect("failed to create Authorization header"),
     );
     headers.insert(header::ACCEPT, HeaderValue::from_static("application/json"));
@@ -183,9 +183,10 @@ async fn run(
 
                 let body = api::prepare_completed_listens(&submissions);
 
-                if let Err(e) = submit(&http_client, &config, body).await.context(
-                    submission_failed_error_string(config.submission.enable_cache),
-                ) {
+                if let Err(e) = submit(&http_client, &config, body)
+                    .await
+                    .context(submission_failed_error_string(config.enable_cache))
+                {
                     error!("{e:#}");
 
                     // Cache the failed submission(s) for future resubmission

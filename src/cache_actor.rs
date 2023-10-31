@@ -1,7 +1,4 @@
-use std::{
-    path::PathBuf,
-    thread::{self, JoinHandle},
-};
+use std::thread::{self, JoinHandle};
 
 use anyhow::{Context, Result};
 use rusqlite::Connection;
@@ -25,19 +22,14 @@ pub struct CacheActor(Option<(UnboundedSender<CacheAction>, JoinHandle<()>)>);
 
 impl CacheActor {
     pub fn start(config: &Configuration) -> Result<CacheActor> {
-        if !config.submission.enable_cache {
+        if !config.enable_cache {
             debug!("submission cache is disabled");
             return Ok(CacheActor(None));
         }
 
-        let cache_file = config
-            .submission
-            .cache_file
-            .clone()
-            .unwrap_or_else(default_cache_path);
-
+        let cache_file = &config.cache_file;
         debug!(?cache_file, "opening submission cache");
-        let db = Connection::open(&cache_file).with_context(|| {
+        let db = Connection::open(cache_file).with_context(|| {
             format!(
                 "Failed to open submission cache file at {}",
                 cache_file.display()
@@ -149,12 +141,6 @@ fn load_pending_submissions(db: &mut Connection) -> Result<Vec<Box<RawValue>>> {
 
     tx.commit()?;
     Ok(out)
-}
-
-fn default_cache_path() -> PathBuf {
-    dirs::data_local_dir()
-        .expect("No state/cache directory")
-        .join("listenbrainz-mpd-cache.sqlite3")
 }
 
 enum CacheAction {

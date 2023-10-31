@@ -2,12 +2,15 @@
 
 # This section configures how the application will submit your listens to ListenBrainz.
 [submission]
-# The user token. Required to be filled.
+# The user token.
+#
 # If you use listenbrainz.org, obtain this from https://listenbrainz.org/profile and put it
 # between the quotes.
+#
+# The `LISTENBRAINZ_TOKEN` environment variable will be preferred over this field if present.
 token = ""
 # Alternatively you can specify a path to a file that contains the token. This file will be read
-# at runtime.
+# at runtime. Leading and trailing whitespace will be removed prior to use.
 #token_file = ""
 
 # Submit genre tags on the played songs as folksonomy tags.
@@ -34,6 +37,9 @@ token = ""
 #cache_file = "/some/other/path/filename.db"
 
 # This section configures how the application connects to your MPD server.
+#
+# The `MPD_HOST` and `MPD_PORT` environment variables will be preferred over the settings from
+# this section if present. Their syntax is compatible to that used by mpc.
 [mpd]
 # Address of the MPD server.
 # This may be an IP address or a hostname. If no port is specified, port 6600 is assumed.
