@@ -10,20 +10,21 @@ A [ListenBrainz](https://listenbrainz.org) submission client for [MPD](https://w
 
 ## Usage
 
-  1. Install the binary.
+  1. Install.
+
+     #### AUR (Arch Linux)
+
+     Install the [`listenbrainz-mpd`](https://aur.archlinux.org/packages/listenbrainz-mpd) AUR package.
 
      #### Cargo
 
      `cargo install listenbrainz-mpd`
 
-     #### AUR (Arch Linux)
+  2. Configure your ListenBrainz user token through the configuration file or the `LISTENBRAINZ_TOKEN` environment variable.
 
-     Install the [`listenbrainz-mpd` AUR package](https://aur.archlinux.org/packages/listenbrainz-mpd).
+     Place the [sample configuration file](./config.toml.sample) in the appropriate location and fill in your ListenBrainz user token and potentially other relevant configuration.
 
-
-  2. Place the sample configuration file in the appropriate location and fill in your ListenBrainz user token and potentially other relevant configuration.
-
-     | Platform  | Path                                                             |
+     | Platform  | Default config file location                                     |
      | --------- | ---------------------------------------------------------------- |
      | Linux     | `$XDG_CONFIG_HOME/listenbrainz-mpd/config.toml`                  |
      | macOS     | `$HOME/Library/Application Support/listenbrainz-mpd/config.toml` |
@@ -31,7 +32,9 @@ A [ListenBrainz](https://listenbrainz.org) submission client for [MPD](https://w
 
      You can use the `--create-default-config` option to have this file automatically created for you.
 
-  3. Run the binary, or install the provided [systemd service file](./listenbrainz-mpd.service).
+  3. Run the binary, or install and enable the provided [systemd service file](./listenbrainz-mpd.service).
+
+     `systemctl --user enable --now listenbrainz-mpd.service`
 
 
 ## License
