@@ -53,7 +53,7 @@ async fn main() -> Result<()> {
 
     let cache_actor = CacheActor::start(&config)?;
     let (mpd_client, state_changes) = connect(&config).await?;
-    let http_actor = SubmissionActor::start(config, cache_actor).await?;
+    let http_actor = SubmissionActor::start(config, cache_actor)?;
 
     if let Some(feedback) = args.send_feedback {
         return send_feedback(mpd_client, feedback).await;

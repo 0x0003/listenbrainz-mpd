@@ -67,10 +67,7 @@ pub struct SubmissionActor {
 
 impl SubmissionActor {
     /// Start the submission actor.
-    pub async fn start(
-        configuration: Configuration,
-        cache_actor: CacheActor,
-    ) -> Result<SubmissionActor> {
+    pub fn start(configuration: Configuration, cache_actor: CacheActor) -> Result<SubmissionActor> {
         let http_client = build_http_client(&configuration);
 
         let (tx, rx) = mpsc::unbounded_channel();
@@ -247,6 +244,12 @@ async fn lookup_recording_mbid(
     config: &Configuration,
     song: Song,
 ) -> Result<String> {
+    #[derive(Debug, serde::Deserialize)]
+    struct MetadataResponse {
+        #[serde(default)]
+        recording_mbid: Option<String>,
+    }
+
     let query_params = api::prepare_recording_mbid_lookup(song)?;
 
     let response = do_http_request(http_client, |c| {
@@ -256,12 +259,6 @@ async fn lookup_recording_mbid(
             .unwrap()
     })
     .await?;
-
-    #[derive(Debug, serde::Deserialize)]
-    struct MetadataResponse {
-        #[serde(default)]
-        recording_mbid: Option<String>,
-    }
 
     let response =
         serde_json::from_slice::<MetadataResponse>(&response).context("Invalid response")?;

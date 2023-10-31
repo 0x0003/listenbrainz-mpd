@@ -136,9 +136,9 @@ pub fn load(path: Option<PathBuf>) -> Result<Configuration> {
         let url = url.trim_end_matches('/');
         if url.is_empty() {
             bail!("`submission.api_url` cannot be empty");
-        } else {
-            url.to_owned()
         }
+
+        url.to_owned()
     } else {
         String::from("https://api.listenbrainz.org")
     };
