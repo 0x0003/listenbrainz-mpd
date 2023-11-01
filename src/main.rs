@@ -1,16 +1,17 @@
 mod cache_actor;
+mod cli;
 mod config;
 mod submission_actor;
 
 use std::{
     cmp,
-    path::{Path, PathBuf},
+    path::Path,
     pin::Pin,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::{Context, Result};
-use clap::{ArgAction, Parser};
+use clap::Parser;
 use config::Configuration;
 use mpd_client::{
     client::{Client, ConnectionEvent, ConnectionEvents, Subsystem},
@@ -26,7 +27,11 @@ use tokio::{
 use tracing::{debug, error, info, info_span, trace, warn, Instrument};
 use tracing_subscriber::EnvFilter;
 
-use crate::{cache_actor::CacheActor, submission_actor::SubmissionActor};
+use crate::{
+    cache_actor::CacheActor,
+    cli::{CliArgs, Feedback},
+    submission_actor::SubmissionActor,
+};
 
 /// The maximum time you have to listen to a song before it will count as a
 /// listen. Set to 4 minutes as per the recommendations in the ListenBrainz
@@ -60,20 +65,6 @@ async fn main() -> Result<()> {
     }
 
     run(mpd_client, state_changes, http_actor).await
-}
-
-#[derive(Parser)]
-#[clap(version, about)]
-pub struct CliArgs {
-    /// Path to the configuration file.
-    #[clap(short, long)]
-    config: Option<PathBuf>,
-    /// Create a configuration file in the default location and exit
-    #[clap(long, action = ArgAction::SetTrue, exclusive = true)]
-    create_default_config: bool,
-    /// Submit feedback for the currently playing song and exit.
-    #[clap(long, exclusive = true, value_enum, value_name = "FEEDBACK")]
-    send_feedback: Option<Feedback>,
 }
 
 async fn send_feedback(mpd_client: Client, feedback: Feedback) -> Result<()> {
@@ -402,32 +393,6 @@ async fn submit_feedback(mut song: Song, http_actor: SubmissionActor, feedback: 
 
     if let Err(e) = http_actor.submit_feedback(mbid, feedback).await {
         error!("{e:#}");
-    }
-}
-
-#[derive(Debug, Clone, Copy, clap::ValueEnum)]
-pub enum Feedback {
-    Hate,
-    Clear,
-    Love,
-}
-
-impl Feedback {
-    fn from_command(s: &str) -> Option<Feedback> {
-        match s {
-            "love" => Some(Feedback::Love),
-            "hate" => Some(Feedback::Hate),
-            "clear" => Some(Feedback::Clear),
-            _ => None,
-        }
-    }
-
-    fn as_command(&self) -> &'static str {
-        match self {
-            Feedback::Hate => "hate",
-            Feedback::Clear => "clear",
-            Feedback::Love => "love",
-        }
     }
 }
 
