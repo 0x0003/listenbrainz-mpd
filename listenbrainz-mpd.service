@@ -1,6 +1,7 @@
 [Unit]
 Description=ListenBrainz submission client for MPD
 Documentation=https://codeberg.org/elomatreb/listenbrainz-mpd
+Documentation=man:listenbrainz-mpd(1)
 After=mpd.service
 
 [Service]
@@ -11,4 +12,3 @@ ExecStart=/usr/bin/listenbrainz-mpd
 
 [Install]
 WantedBy=mpd.service
-

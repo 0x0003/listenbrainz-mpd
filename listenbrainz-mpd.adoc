@@ -1,0 +1,79 @@
+= listenbrainz-mpd(1)
+listenbrainz-mpd contributors
+:doctype: manpage
+:release-version: 2.3.0
+:man-linkstyle: pass:[blue R < >]
+
+== Name
+
+listenbrainz-mpd - ListenBrainz submission client for MPD
+
+== Synopsis
+
+*listenbrainz-mpd* [_OPTION_]...
+
+== Description
+
+MPD client program that automatically submits your listened songs to <https://listenbrainz.org> or another API-compatible destination.
+
+== Options
+
+*-c, --config* _CONFIG_FILE_::
+  Use _CONFIG_FILE_ instead of the default config file.
+
+*--create-default-config*::
+  Create a default configuration file in the default location and exit.
+
+*--send-feedback love|hate|clear*::
+  Send ListenBrainz feedback for the currently playing song, if any.
+
+  *love*:::
+    Mark the currently playing song as "loved".
+
+  *hate*:::
+    Mark the currently playing song as "hated".
+
+  *clear*:::
+    Clear previously submitted feedback for the currently playing song.
+
+*-h, --help*::
+  Print help and exit.
+
+*-V, --version*::
+  Print version information and exit.
+
+== Configuration
+
+Configuration is loaded from *$XDG_CONFIG_HOME/listenbrainz-mpd/config.toml*, or *$HOME/.config/listenbrainz-mpd/config.toml* if *XDG_CONFIG_HOME* is unset.
+An alternative configuration file may be specified using the *--config* option.
+
+See the sample configuration file for details on the supported configuration keys.
+
+== Environment
+
+Environment variables will override the equivalent values from the <<Configuration>>.
+
+*LISTENBRAINZ_TOKEN*::
+  ListenBrainz user token.
+
+*MPD_HOST*::
+  Host of the MPD server.
+  May be a hostname, a bare IP address, or an absolute path to a Unix socket.
+  To use a server password, specify a value like _password_**@**_host_.
+
+*MPD_PORT*::
+  TCP port of the MPD server.
+
+== Resources
+
+Source code and issue tracker:: <https://codeberg.org/elomatreb/listenbrainz-mpd>
+
+== Copying
+
+Copyright (C) 2023 {author}. +
+
+This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public License version 3 as published by the Free Software Foundation.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
