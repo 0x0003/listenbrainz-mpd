@@ -1,3 +1,9 @@
+# 2.3.1 (2023-11-02)
+
+ - Packaging improvements.
+   - Add build script that pregenerates shell completion files (behind the `shell_completion` feature).
+   - Add man page.
+
 # 2.3.0 (2023-10-31)
 
  - Support loading key configuration values from environment variables.
@@ -25,7 +31,6 @@
    - This avoids some issues with the service starting and failing before the network is fully configured
    - Also mitigated by increasing the delay between restart attempts in the provided .service file (#8, thanks to 11xx)
  - No longer exit with an error status if the server closes the connection cleanly.
-
 
 # 2.0.2 (2023-02-03)
 

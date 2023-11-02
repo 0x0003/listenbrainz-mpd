@@ -1,7 +1,7 @@
 = listenbrainz-mpd(1)
 listenbrainz-mpd contributors
 :doctype: manpage
-:release-version: 2.3.0
+:release-version: 2.3.1
 :man-linkstyle: pass:[blue R < >]
 
 == Name
