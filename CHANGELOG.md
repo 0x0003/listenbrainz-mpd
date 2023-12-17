@@ -1,3 +1,9 @@
+# 2.3.2 (2023-12-17)
+
+ - Add (optional) systemd integration (when built with the `systemd` feature).
+   - Service file is now a `Type=notify`.
+ - Internal improvements to allow building with different TLS backends.
+
 # 2.3.1 (2023-11-02)
 
  - Packaging improvements.
