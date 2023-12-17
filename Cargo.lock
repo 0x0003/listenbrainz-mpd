@@ -594,6 +594,7 @@ dependencies = [
  "once_cell",
  "reqwest",
  "rusqlite",
+ "sd-notify",
  "serde",
  "serde_json",
  "tokio",
@@ -981,6 +982,12 @@ checksum = "0c3733bf4cf7ea0880754e19cb5a462007c4a8c1914bff372ccc95b464f1df88"
 dependencies = [
  "windows-sys 0.48.0",
 ]
+
+[[package]]
+name = "sd-notify"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "621e3680f3e07db4c9c2c3fb07c6223ab2fab2e54bd3c04c3ae037990f428c32"
 
 [[package]]
 name = "security-framework"

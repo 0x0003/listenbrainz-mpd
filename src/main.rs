@@ -67,6 +67,11 @@ async fn main() -> Result<()> {
 
     let res = run(mpd_client, state_changes, http_actor).await;
 
+    #[cfg(feature = "systemd")]
+    {
+        let _ = sd_notify::notify(false, &[sd_notify::NotifyState::Stopping]);
+    }
+
     // Wait for actors to exit
     http_actor_handle.await.expect("HTTP actor panicked");
 
@@ -147,6 +152,8 @@ struct State {
     /// `true` if a listen record for the current song has already been
     /// submitted.
     listen_submitted: bool,
+    /// Counter for completed listens
+    completed_listens: u64,
 }
 
 impl State {
@@ -178,7 +185,11 @@ async fn run(
         listen_required,
         listen_finished: Box::pin(sleep(listen_required)),
         listen_submitted: false,
+        completed_listens: 0,
     };
+
+    #[cfg(feature = "systemd")]
+    let _ = sd_notify::notify(false, &[sd_notify::NotifyState::Ready]);
 
     // Send initial now_playing if we start while a song is playing
     if let Some(song) = &state.song {
@@ -195,6 +206,15 @@ async fn run(
     debug!("entering main loop");
 
     loop {
+        #[cfg(feature = "systemd")]
+        let _ = sd_notify::notify(
+            false,
+            &[sd_notify::NotifyState::Status(&format!(
+                "Watching for listens; {} completed",
+                state.completed_listens
+            ))],
+        );
+
         tokio::select! {
             event = connection_events.next() => {
                 match event {
@@ -313,6 +333,7 @@ fn handle_listen_complete(state: &mut State, http_actor: &SubmissionActor) {
         "submitting listen entry"
     );
     state.listen_submitted = true;
+    state.completed_listens += 1;
 
     let song = state.song.clone().expect("no song to submit");
 

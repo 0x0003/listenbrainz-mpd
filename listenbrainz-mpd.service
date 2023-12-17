@@ -5,7 +5,7 @@ Documentation=man:listenbrainz-mpd(1)
 After=mpd.service
 
 [Service]
-Type=simple
+Type=notify
 Restart=always
 RestartSec=5
 ExecStart=/usr/bin/listenbrainz-mpd
