@@ -17,6 +17,7 @@ use tokio::{
         mpsc::{self, UnboundedReceiver, UnboundedSender},
         oneshot,
     },
+    task::JoinHandle,
     time::sleep,
 };
 use tracing::{debug, error, trace, warn};
@@ -67,13 +68,16 @@ pub struct SubmissionActor {
 
 impl SubmissionActor {
     /// Start the submission actor.
-    pub fn start(configuration: Configuration, cache_actor: CacheActor) -> Result<SubmissionActor> {
+    pub fn start(
+        configuration: Configuration,
+        cache_actor: CacheActor,
+    ) -> Result<(SubmissionActor, JoinHandle<()>)> {
         let http_client = build_http_client(&configuration);
 
         let (tx, rx) = mpsc::unbounded_channel();
-        tokio::spawn(run(http_client, configuration, cache_actor, rx));
+        let handle = tokio::spawn(run(http_client, configuration, cache_actor, rx));
 
-        Ok(SubmissionActor { tx })
+        Ok((SubmissionActor { tx }, handle))
     }
 
     /// Submit a "Now Playing" event.

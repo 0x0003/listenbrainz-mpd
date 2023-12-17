@@ -22,6 +22,7 @@ use mpd_client::{
 use serde::{Serialize, Serializer};
 use tokio::{
     net::{TcpStream, UnixStream},
+    signal::ctrl_c,
     time::{sleep, Sleep},
 };
 use tracing::{debug, error, info, info_span, trace, warn, Instrument};
@@ -58,13 +59,18 @@ async fn main() -> Result<()> {
 
     let cache_actor = CacheActor::start(&config)?;
     let (mpd_client, state_changes) = connect(&config).await?;
-    let http_actor = SubmissionActor::start(config, cache_actor)?;
+    let (http_actor, http_actor_handle) = SubmissionActor::start(config, cache_actor)?;
 
     if let Some(feedback) = args.send_feedback {
         return send_feedback(mpd_client, feedback).await;
     }
 
-    run(mpd_client, state_changes, http_actor).await
+    let res = run(mpd_client, state_changes, http_actor).await;
+
+    // Wait for actors to exit
+    http_actor_handle.await.expect("HTTP actor panicked");
+
+    res
 }
 
 async fn send_feedback(mpd_client: Client, feedback: Feedback) -> Result<()> {
@@ -212,6 +218,10 @@ async fn run(
             }
             _ = &mut state.listen_finished, if state.should_poll() => {
                 handle_listen_complete(&mut state, &http_actor);
+            }
+            _ = ctrl_c() => {
+                debug!("received interrupt");
+                return Ok(());
             }
         }
     }

@@ -33,6 +33,7 @@ tokio = { version = "1.33.0", features = [
     "net",
     "time",
     "macros",
+    "signal",
     "sync",
 ] }
 tokio-stream = "0.1.14"

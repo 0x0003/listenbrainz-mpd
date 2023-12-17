@@ -44,8 +44,10 @@ impl CacheActor {
     }
 
     pub fn shutdown(self) {
-        let Some((_, handle)) = self.0 else { return };
-        handle.join().unwrap();
+        if let Some((channel, handle)) = self.0 {
+            drop(channel);
+            handle.join().unwrap();
+        }
     }
 
     pub fn cache_submissions(&self, submissions: Vec<Box<RawValue>>) {
