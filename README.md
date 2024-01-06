@@ -18,7 +18,8 @@ A [ListenBrainz](https://listenbrainz.org) submission client for [MPD](https://w
 
      #### Cargo
 
-     `cargo install listenbrainz-mpd`
+     Run `cargo install listenbrainz-mpd`.
+     **Note**: If you want to use the provided [systemd service file](./listenbrainz-mpd.service), you need to enable the `systemd` cargo feature (`-F systemd`).
 
   2. Configure your ListenBrainz user token through the configuration file or the `LISTENBRAINZ_TOKEN` environment variable.
 
