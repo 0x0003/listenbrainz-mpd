@@ -272,10 +272,16 @@ async fn handle_state_change(
     http_actor: SubmissionActor,
 ) -> Result<()> {
     let (new_play_state, new_song) = get_status_and_song(mpd_client).await?;
+    let is_single_on = get_single_status(mpd_client).await?;
 
     let same_song = is_same_song(state.song.as_ref(), new_song.as_ref());
 
     if same_song && state.play_state == new_play_state {
+        if is_single_on == commands::SingleMode::Enabled {
+            trace!("single onsus");
+        } else {
+            trace!("single offosus");
+        }
         // Nothing relevant changed. This happens e.g. when the status of the repeat or
         // shuffle options is changed
         trace!("nothing changed");
@@ -458,6 +464,14 @@ async fn get_status_and_song(client: &Client) -> Result<(PlayState, Option<SongI
         .command_list((commands::Status, commands::CurrentSong))
         .await
         .map(|(state, song)| (state.state, song))
+        .map_err(Into::into)
+}
+
+async fn get_single_status(client: &Client) -> Result<commands::SingleMode> {
+    client
+        .command(commands::Status)
+        .await
+        .map(|state| (state.single))
         .map_err(Into::into)
 }
 
