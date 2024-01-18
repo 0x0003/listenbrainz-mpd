@@ -279,34 +279,36 @@ async fn handle_state_change(
     let same_song = is_same_song(state.song.as_ref(), new_song.as_ref());
 
     if same_song && state.play_state == new_play_state {
-        if is_single_on == commands::SingleMode::Enabled && elapsed < Duration::from_millis(200) {
-            // The song is the same repeated
-            // this code is exactly the same as the else
-            let required_playtime = required_time_for_song(new_song.as_ref());
-            debug!(
-                song = song_url(new_song.as_ref().map(|s| &s.song)),
-                ?required_playtime,
-                "song changed"
-            );
+        if elapsed < Duration::from_millis(200) {
+            if is_single_on == commands::SingleMode::Enabled { //TODO: check for playlist length
+                                                               //being 1 and repeat on simultaneously
+                // The song is the same repeated
+                // this code is exactly the same as the one in else
+                let required_playtime = required_time_for_song(new_song.as_ref());
+                debug!(
+                    song = song_url(new_song.as_ref().map(|s| &s.song)),
+                    ?required_playtime,
+                    "song same but repeated"
+                );
 
-            state.listen_started = Instant::now();
-            state.listen_timestamp = SystemTime::now();
-            state.listen_required = required_playtime;
-            state.listen_finished = Box::pin(sleep(required_playtime));
-            state.listen_submitted = false;
+                state.listen_started = Instant::now();
+                state.listen_timestamp = SystemTime::now();
+                state.listen_required = required_playtime;
+                state.listen_finished = Box::pin(sleep(required_playtime));
+                state.listen_submitted = false;
 
-            if let Some(song) = &new_song {
-                if new_play_state == PlayState::Playing {
-                    http_actor.now_playing(song.song.clone());
+                if let Some(song) = &new_song {
+                    if new_play_state == PlayState::Playing {
+                        http_actor.now_playing(song.song.clone());
+                    }
                 }
+                trace!("song repeated with single on");
             }
-            trace!("single onsus");
         } else {
-            trace!("single offosus");
+            // Nothing relevant changed. This happens e.g. when the status of the repeat or
+            // shuffle options is changed
+            trace!("nothing changed");
         }
-        // Nothing relevant changed. This happens e.g. when the status of the repeat or
-        // shuffle options is changed
-        trace!("nothing changed");
     } else if same_song {
         if state.play_state != PlayState::Playing && new_play_state == PlayState::Playing {
             // Resumed from pause, update the listen start time
