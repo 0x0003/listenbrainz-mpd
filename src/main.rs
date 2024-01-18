@@ -273,6 +273,7 @@ async fn handle_state_change(
 ) -> Result<()> {
     let (new_play_state, new_song) = get_status_and_song(mpd_client).await?;
     let is_single_on = get_single_status(mpd_client).await?;
+    let elapsed = get_elapsed(mpd_client).await?.expect("sus");
 
     let same_song = is_same_song(state.song.as_ref(), new_song.as_ref());
 
@@ -472,6 +473,14 @@ async fn get_single_status(client: &Client) -> Result<commands::SingleMode> {
         .command(commands::Status)
         .await
         .map(|state| (state.single))
+        .map_err(Into::into)
+}
+
+async fn get_elapsed(client: &Client) -> Result<Option<Duration>> {
+    client
+        .command(commands::Status)
+        .await
+        .map(|state| (state.elapsed))
         .map_err(Into::into)
 }
 
