@@ -278,7 +278,27 @@ async fn handle_state_change(
     let same_song = is_same_song(state.song.as_ref(), new_song.as_ref());
 
     if same_song && state.play_state == new_play_state {
-        if is_single_on == commands::SingleMode::Enabled {
+        if is_single_on == commands::SingleMode::Enabled && elapsed < Duration::from_millis(200) {
+            // The song is the same repeated
+            // this code is exactly the same as the else
+            let required_playtime = required_time_for_song(new_song.as_ref());
+            debug!(
+                song = song_url(new_song.as_ref().map(|s| &s.song)),
+                ?required_playtime,
+                "song changed"
+            );
+
+            state.listen_started = Instant::now();
+            state.listen_timestamp = SystemTime::now();
+            state.listen_required = required_playtime;
+            state.listen_finished = Box::pin(sleep(required_playtime));
+            state.listen_submitted = false;
+
+            if let Some(song) = &new_song {
+                if new_play_state == PlayState::Playing {
+                    http_actor.now_playing(song.song.clone());
+                }
+            }
             trace!("single onsus");
         } else {
             trace!("single offosus");
