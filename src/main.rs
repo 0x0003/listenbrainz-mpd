@@ -260,7 +260,7 @@ async fn handle_subsystem_event(
             handle_state_change(state, mpd_client, http_actor.clone()).await
         }
         // Received a message on one of our subscribed channels (for feedback)
-        Subsystem::Message => handle_message_event(state, mpd_client, http_actor).await,
+        Subsystem::Message => handle_message_event(state, mpd_client, http_actor.clone()).await,
         // Nothing relevant for us
         _ => Ok(()),
     }
@@ -349,7 +349,7 @@ fn handle_listen_complete(state: &mut State, http_actor: &SubmissionActor) {
 async fn handle_message_event(
     state: &State,
     mpd_client: &Client,
-    http_actor: &SubmissionActor,
+    http_actor: SubmissionActor,
 ) -> Result<()> {
     // Read our messages
     let messages = mpd_client
@@ -377,15 +377,26 @@ async fn handle_message_event(
     };
 
     let span = info_span!("submit_feedback", ?feedback, song = ?song.url);
-    tokio::spawn(submit_feedback(song, http_actor.clone(), feedback).instrument(span));
+    tokio::spawn(
+        async move {
+            if let Err(error) = submit_feedback(song, http_actor, feedback).await {
+                error!(?error, "Failed to submit feedback");
+            }
+        }
+        .instrument(span),
+    );
 
     Ok(())
 }
 
-async fn submit_feedback(mut song: Song, http_actor: SubmissionActor, feedback: Feedback) {
+async fn submit_feedback(
+    mut song: Song,
+    http_actor: SubmissionActor,
+    feedback: Feedback,
+) -> Result<()> {
     debug!("submitting feedback");
 
-    let mut mbid = song
+    let mbid = song
         .tags
         .remove(&Tag::MusicBrainzRecordingId)
         .and_then(|mut v| {
@@ -407,24 +418,21 @@ async fn submit_feedback(mut song: Song, http_actor: SubmissionActor, feedback: 
             }
         });
 
-    if mbid.is_none() {
-        // Need to look up the mapping on ListenBrainz
-        trace!("requesting MBID mapping from ListenBrainz API");
-        match http_actor.lookup_recording_mbid(song.clone()).await {
-            Ok(id) => mbid = Some(id),
-            Err(e) => {
-                error!("Cannot submit feedback: {e:#}");
-                return;
-            }
-        }
-    }
+    let mbid = if let Some(mbid) = mbid {
+        mbid
+    } else {
+        debug!("requesting MBID mapping from ListenBrainz API");
+        http_actor
+            .lookup_recording_mbid(song)
+            .await
+            .context("Failed to look up MBID mapping for recording")?
+    };
 
-    let mbid = mbid.unwrap();
     trace!(?mbid);
-
-    if let Err(e) = http_actor.submit_feedback(mbid, feedback).await {
-        error!("{e:#}");
-    }
+    http_actor
+        .submit_feedback(mbid, feedback)
+        .await
+        .context("Failed to submit feedback")
 }
 
 impl Serialize for Feedback {
