@@ -16,7 +16,7 @@ use config::Configuration;
 use mpd_client::{
     client::{Client, ConnectionEvent, ConnectionEvents, Subsystem},
     commands,
-    responses::{PlayState, Song, SongInQueue},
+    responses::{PlayState, Song, SongInQueue, Status},
     tag::Tag,
 };
 use serde::{Serialize, Serializer};
@@ -168,7 +168,7 @@ async fn run(
     http_actor: SubmissionActor,
 ) -> Result<()> {
     // Setup initial state
-    let (play_state, song) = get_status_and_song(&mpd_client).await?;
+    let (status, song) = get_status_and_song(&mpd_client).await?;
 
     let listen_required = required_time_for_song(song.as_ref());
 
@@ -178,7 +178,7 @@ async fn run(
         .await?;
 
     let mut state = State {
-        play_state,
+        play_state: status.state,
         song,
         listen_started: Instant::now(),
         listen_timestamp: SystemTime::now(),
@@ -271,10 +271,15 @@ async fn handle_state_change(
     mpd_client: &Client,
     http_actor: SubmissionActor,
 ) -> Result<()> {
-    let (new_play_state, new_song) = get_status_and_song(mpd_client).await?;
+    let (status, new_song) = get_status_and_song(mpd_client).await?;
+    let new_play_state = status.state;
 
-    let (_is_repeat_on, _is_random_on, _is_consume_on, is_single_on) = get_mode_status(mpd_client).await?;
-    let elapsed = get_elapsed(mpd_client).await?.unwrap();
+    let _is_repeat_on  = status.repeat;
+    let _is_random_on  = status.random;
+    let _is_consume_on = status.consume;
+    let is_single_on   = status.single;
+
+    let elapsed = status.elapsed;
 
     let same_song = is_same_song(state.song.as_ref(), new_song.as_ref());
 
@@ -473,27 +478,11 @@ fn is_same_song(a: Option<&SongInQueue>, b: Option<&SongInQueue>) -> bool {
     a.id == b.id && a.position == b.position && a.song.url == b.song.url
 }
 
-async fn get_status_and_song(client: &Client) -> Result<(PlayState, Option<SongInQueue>)> {
+async fn get_status_and_song(client: &Client) -> Result<(Status, Option<SongInQueue>)> {
     client
         .command_list((commands::Status, commands::CurrentSong))
         .await
-        .map(|(state, song)| (state.state, song))
-        .map_err(Into::into)
-}
-
-async fn get_mode_status(client: &Client) -> Result<(bool, bool, bool, commands::SingleMode)> {
-    client
-        .command(commands::Status)
-        .await
-        .map(|state| (state.repeat, state.random, state.consume, state.single))
-        .map_err(Into::into)
-}
-
-async fn get_elapsed(client: &Client) -> Result<Option<Duration>> {
-    client
-        .command(commands::Status)
-        .await
-        .map(|state| (state.elapsed))
+        .map(|(state, song)| (state, song))
         .map_err(Into::into)
 }
 
