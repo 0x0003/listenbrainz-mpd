@@ -282,26 +282,7 @@ async fn handle_state_change(
         if elapsed < Duration::from_millis(200) {
             if is_single_on == commands::SingleMode::Enabled { //TODO: check for playlist length
                                                                //being 1 and repeat on simultaneously
-                // The song is the same repeated
-                // this code is exactly the same as the one in else
-                let required_playtime = required_time_for_song(new_song.as_ref());
-                debug!(
-                    song = song_url(new_song.as_ref().map(|s| &s.song)),
-                    ?required_playtime,
-                    "song same but repeated"
-                );
-
-                state.listen_started = Instant::now();
-                state.listen_timestamp = SystemTime::now();
-                state.listen_required = required_playtime;
-                state.listen_finished = Box::pin(sleep(required_playtime));
-                state.listen_submitted = false;
-
-                if let Some(song) = &new_song {
-                    if new_play_state == PlayState::Playing {
-                        http_actor.now_playing(song.song.clone());
-                    }
-                }
+                update_now_playing(new_song.as_ref(), state, &new_play_state, http_actor);
                 trace!("song repeated with single on");
             }
         } else {
@@ -331,9 +312,24 @@ async fn handle_state_change(
         }
     } else {
         // The song changed
-        let required_playtime = required_time_for_song(new_song.as_ref());
+        update_now_playing(new_song.as_ref(), state, &new_play_state, http_actor);
+    }
+
+    state.play_state = new_play_state;
+    state.song = new_song;
+
+    Ok(())
+}
+
+fn update_now_playing(
+    new_song: Option<&SongInQueue>,
+    state: &mut State,
+    new_play_state: &PlayState,
+    http_actor: SubmissionActor
+) {
+        let required_playtime = required_time_for_song(new_song);
         debug!(
-            song = song_url(new_song.as_ref().map(|s| &s.song)),
+            song = song_url(new_song.map(|s| &s.song)),
             ?required_playtime,
             "song changed"
         );
@@ -345,16 +341,10 @@ async fn handle_state_change(
         state.listen_submitted = false;
 
         if let Some(song) = &new_song {
-            if new_play_state == PlayState::Playing {
+            if *new_play_state == PlayState::Playing {
                 http_actor.now_playing(song.song.clone());
             }
         }
-    }
-
-    state.play_state = new_play_state;
-    state.song = new_song;
-
-    Ok(())
 }
 
 fn handle_listen_complete(state: &mut State, http_actor: &SubmissionActor) {
