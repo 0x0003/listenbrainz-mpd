@@ -284,7 +284,11 @@ async fn handle_state_change(
     let same_song = is_same_song(state.song.as_ref(), new_song.as_ref());
 
     if same_song && state.play_state == new_play_state {
-        if elapsed < Duration::from_millis(200) {
+        // if the elapsed time is less than 200 milliseconds, we can assume the song started again
+        // and this was not a seek, since it's unlikely that someone would seek to less than 1
+        // second (and most mpd clients probably don't even let you seek with more than 1 second accuracy
+        // anyway)
+        if elapsed < Some(Duration::from_millis(200)) {
             if is_single_on == commands::SingleMode::Enabled { //TODO: check for playlist length
                                                                //being 1 and repeat on simultaneously
                 update_now_playing(new_song.as_ref(), state, &new_play_state, http_actor);
