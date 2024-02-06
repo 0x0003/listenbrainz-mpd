@@ -15,7 +15,7 @@ use clap::Parser;
 use config::Configuration;
 use mpd_client::{
     client::{Client, ConnectionEvent, ConnectionEvents, Subsystem},
-    commands,
+    commands::{self, SingleMode},
     responses::{PlayState, Song, SongInQueue, Status},
     tag::Tag,
 };
@@ -271,32 +271,18 @@ async fn handle_state_change(
     mpd_client: &Client,
     http_actor: SubmissionActor,
 ) -> Result<()> {
-    let (status, new_song) = get_status_and_song(mpd_client).await?;
-    let new_play_state = status.state;
-
-    let _is_repeat_on  = status.repeat;
-    let _is_random_on  = status.random;
-    let _is_consume_on = status.consume;
-    let is_single_on   = status.single;
-
-    let elapsed = status.elapsed;
-
+    let (new_status, new_song) = get_status_and_song(mpd_client).await?;
+    let new_play_state = new_status.state;
     let same_song = is_same_song(state.song.as_ref(), new_song.as_ref());
 
     if same_song && state.play_state == new_play_state {
-        // If the elapsed time is less than 200 milliseconds, we can assume the song
-        // started again and this was not a seek, since it's unlikely that
-        // someone would seek to less than 1 second
-        if elapsed < Some(Duration::from_millis(200)) {
-            if is_single_on == commands::SingleMode::Enabled {
-                //TODO: check for playlist length
-                //being 1 and repeat on simultaneously
-                update_now_playing(new_song.as_ref(), state, &new_play_state, http_actor);
-                trace!("song repeated with single on");
-            }
+        // Apply a heuristic to guess when a single track is being played on repeat.
+        if is_same_track_on_repeat(&new_status) {
+            trace!("same track is being played on repeat");
+            start_new_listen(new_song.as_ref(), state, &new_play_state, http_actor);
         } else {
-            // Nothing relevant changed. This happens e.g. when the status of the repeat or
-            // shuffle options is changed
+            // Nothing relevant changed. This happens when player options like shuffling are
+            // changed.
             trace!("nothing changed");
         }
     } else if same_song {
@@ -321,7 +307,7 @@ async fn handle_state_change(
         }
     } else {
         // The song changed
-        update_now_playing(new_song.as_ref(), state, &new_play_state, http_actor);
+        start_new_listen(new_song.as_ref(), state, &new_play_state, http_actor);
     }
 
     state.play_state = new_play_state;
@@ -330,7 +316,8 @@ async fn handle_state_change(
     Ok(())
 }
 
-fn update_now_playing(
+/// Start the progress on a new listen and send a "Now playing" notification.
+fn start_new_listen(
     new_song: Option<&SongInQueue>,
     state: &mut State,
     new_play_state: &PlayState,
@@ -482,11 +469,31 @@ fn is_same_song(a: Option<&SongInQueue>, b: Option<&SongInQueue>) -> bool {
     a.id == b.id && a.position == b.position && a.song.url == b.song.url
 }
 
+/// Try to guess if a new state indicates the current track being played is
+/// potentially the same track on repeat. This function assumes the play state
+/// and track URI remained the same.
+///
+/// This can happen if:
+///   - The "single" mode is enabled and the "repeat" mode is enabled
+///   - "Repeat" mode is enabled and there is only a single track in the play
+///     queue
+fn is_same_track_on_repeat(status: &Status) -> bool {
+    // Check if the elapsed time is very close to the start of the track. We cannot
+    // just check for the time going to zero because the server sending the idle
+    // notification and us requesting the new state introduces latency. The value
+    // was chosen experimentally.
+
+    if status.elapsed > Some(Duration::from_millis(200)) {
+        return false;
+    }
+
+    status.repeat && (status.single != SingleMode::Disabled || status.playlist_length == 1)
+}
+
 async fn get_status_and_song(client: &Client) -> Result<(Status, Option<SongInQueue>)> {
     client
         .command_list((commands::Status, commands::CurrentSong))
         .await
-        .map(|(state, song)| (state, song))
         .map_err(Into::into)
 }
 
