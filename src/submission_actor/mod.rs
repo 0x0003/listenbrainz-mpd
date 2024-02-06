@@ -2,12 +2,11 @@
 
 mod api;
 
-use std::time::Duration;
+use std::{sync::OnceLock, time::Duration};
 
 use anyhow::{anyhow, bail, Context, Result};
 use bytes::Bytes;
 use mpd_client::responses::Song;
-use once_cell::sync::OnceCell;
 use reqwest::{
     header::{self, HeaderMap, HeaderValue},
     Client, Request, StatusCode,
@@ -36,7 +35,7 @@ const LISTENBRAINZ_MBID_LOOKUP_PATH: &str = "/1/metadata/lookup";
 const LISTENBRAINZ_FEEDBACK_SUBMISSION_PATH: &str = "/1/feedback/recording-feedback";
 
 fn submission_url(config: &Configuration) -> &'static str {
-    static URL: OnceCell<String> = OnceCell::new();
+    static URL: OnceLock<String> = OnceLock::new();
 
     URL.get_or_init(|| {
         let base = &config.api_url;
@@ -45,7 +44,7 @@ fn submission_url(config: &Configuration) -> &'static str {
 }
 
 fn mbid_lookup_url(config: &Configuration) -> &'static str {
-    static URL: OnceCell<String> = OnceCell::new();
+    static URL: OnceLock<String> = OnceLock::new();
     URL.get_or_init(|| {
         let base = &config.api_url;
         format!("{base}{LISTENBRAINZ_MBID_LOOKUP_PATH}")
@@ -53,7 +52,7 @@ fn mbid_lookup_url(config: &Configuration) -> &'static str {
 }
 
 fn feedback_submission_url(config: &Configuration) -> &'static str {
-    static URL: OnceCell<String> = OnceCell::new();
+    static URL: OnceLock<String> = OnceLock::new();
     URL.get_or_init(|| {
         let base = &config.api_url;
         format!("{base}{LISTENBRAINZ_FEEDBACK_SUBMISSION_PATH}")

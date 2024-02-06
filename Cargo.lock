@@ -591,7 +591,6 @@ dependencies = [
  "clap_complete",
  "dirs",
  "mpd_client",
- "once_cell",
  "reqwest",
  "rusqlite",
  "sd-notify",
