@@ -21,18 +21,18 @@ shell_completion = ["dep:clap_complete", "dep:clap"]
 systemd = ["dep:sd-notify"]
 
 [dependencies]
-anyhow = "1.0.75"
+anyhow = "1.0.79"
 bytes = "1.5.0"
-clap = { version = "4.4.7", features = ["cargo", "derive"] }
+clap = { version = "4.4.18", features = ["cargo", "derive"] }
 dirs = "5.0.1"
-mpd_client = "1.3.0"
-once_cell = "1.18.0"
-reqwest = { version = "0.11.22", features = ["json"], default-features = false }
+mpd_client = "1.4.0"
+once_cell = "1.19.0"
+reqwest = { version = "0.11.24", features = ["json"], default-features = false }
 rusqlite = "0.30.0"
 sd-notify = { version = "0.4.1", optional = true }
-serde = { version = "1.0.190", features = ["derive"] }
-serde_json = { version = "1.0.108", features = ["raw_value"] }
-tokio = { version = "1.33.0", features = [
+serde = { version = "1.0.196", features = ["derive"] }
+serde_json = { version = "1.0.113", features = ["raw_value"] }
+tokio = { version = "1.36.0", features = [
     "rt",
     "net",
     "time",
@@ -41,10 +41,10 @@ tokio = { version = "1.33.0", features = [
     "sync",
 ] }
 tokio-stream = "0.1.14"
-toml = "0.8.6"
+toml = "0.8.10"
 tracing = "0.1.40"
-tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 
 [build-dependencies]
-clap = { version = "4.4.7", features = ["cargo", "derive"], optional = true }
-clap_complete = { version = "4.4.4", optional = true }
+clap = { version = "4.4.18", features = ["cargo", "derive"], optional = true }
+clap_complete = { version = "4.4.10", optional = true }
