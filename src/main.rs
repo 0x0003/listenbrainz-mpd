@@ -482,12 +482,12 @@ fn is_same_track_on_repeat(status: &Status) -> bool {
     // just check for the time going to zero because the server sending the idle
     // notification and us requesting the new state introduces latency. The value
     // was chosen experimentally.
-
-    if status.elapsed > Some(Duration::from_millis(200)) {
-        return false;
-    }
-
-    status.repeat && (status.single != SingleMode::Disabled || status.playlist_length == 1)
+    // Then apply the rules to detect the situations listed above. This may
+    // interpret seeking to the very beginning of the current track as starting a
+    // new listen, but this is unavoidable.
+    status.elapsed <= Some(Duration::from_millis(200))
+        && status.repeat
+        && (status.single != SingleMode::Disabled || status.playlist_length == 1)
 }
 
 async fn get_status_and_song(client: &Client) -> Result<(Status, Option<SongInQueue>)> {
