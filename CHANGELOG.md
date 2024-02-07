@@ -1,3 +1,8 @@
+# 2.3.3 (2024-02-07)
+
+ - Fix repeated tracks in certain situations not being counted as separate listens ([#7](https://codeberg.org/elomatreb/listenbrainz-mpd/issues/7), [#14](https://codeberg.org/elomatreb/listenbrainz-mpd/pulls/14), thanks to koraynilay).
+ - Internal improvements, dependency updates.
+
 # 2.3.2 (2023-12-17)
 
  - Add (optional) systemd integration (when built with the `systemd` feature).
