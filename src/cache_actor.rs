@@ -1,4 +1,7 @@
-use std::thread::{self, JoinHandle};
+use std::{
+    fs,
+    thread::{self, JoinHandle},
+};
 
 use anyhow::{Context, Result};
 use rusqlite::Connection;
@@ -29,6 +32,18 @@ impl CacheActor {
 
         let cache_file = &config.cache_file;
         debug!(?cache_file, "opening submission cache");
+
+        // Ensure the cache directory exists so that the database file can be created if
+        // necessary
+        if let Some(cache_file_dir) = cache_file.parent() {
+            fs::create_dir_all(cache_file_dir).with_context(|| {
+                format!(
+                    "Failed to create submission cache directory at {}",
+                    cache_file_dir.display()
+                )
+            })?;
+        }
+
         let db = Connection::open(cache_file).with_context(|| {
             format!(
                 "Failed to open submission cache file at {}",
