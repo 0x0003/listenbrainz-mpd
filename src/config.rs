@@ -7,7 +7,7 @@ use std::{
 
 use anyhow::{anyhow, bail, Context, Error, Result};
 use serde::Deserialize;
-use tracing::debug;
+use tracing::{debug, warn};
 
 /// The default configuration file.
 pub const DEFAULT: &[u8] = include_str!("../config.toml.sample").as_bytes();
@@ -168,9 +168,21 @@ pub fn load(path: Option<PathBuf>) -> Result<Configuration> {
     };
 
     let cache_file = config.submission.cache_file.unwrap_or_else(|| {
-        dirs::data_local_dir()
-            .expect("No state/cache directory")
-            .join("listenbrainz-mpd-cache.sqlite3")
+        let base = dirs::data_local_dir().expect("No state/cache directory");
+
+        // Check if submission cache at legacy path exists (technically against
+        // XDG spec)
+        let legacy = base.join("listenbrainz-mpd-cache.sqlite3");
+        if legacy.is_file() {
+            warn!(
+                cache_file = ?legacy,
+                "using deprecated submission cache location"
+            );
+            legacy
+        } else {
+            // If it does not exist, use the XDG-compliant location
+            base.join(concat!(env!("CARGO_PKG_NAME"), "/submission-cache.sqlite3"))
+        }
     });
 
     Ok(Configuration {
