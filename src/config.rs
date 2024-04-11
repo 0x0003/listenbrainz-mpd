@@ -167,6 +167,12 @@ pub fn load(path: Option<PathBuf>) -> Result<Configuration> {
         None => String::from("localhost"),
     };
 
+    let cache_file = config.submission.cache_file.unwrap_or_else(|| {
+        dirs::data_local_dir()
+            .expect("No state/cache directory")
+            .join("listenbrainz-mpd-cache.sqlite3")
+    });
+
     Ok(Configuration {
         token,
         api_url,
@@ -174,9 +180,7 @@ pub fn load(path: Option<PathBuf>) -> Result<Configuration> {
         mpd_port,
         mpd_password: config.mpd.password,
         enable_cache: config.submission.enable_cache,
-        cache_file: dirs::data_local_dir()
-            .expect("No state/cache directory")
-            .join("listenbrainz-mpd-cache.sqlite3"),
+        cache_file,
         submit_genres_as_folksonomy: config.submission.genres_as_folksonomy,
         genre_separator: config.submission.genre_separator,
     })
