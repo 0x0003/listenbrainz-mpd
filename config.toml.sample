@@ -31,9 +31,16 @@ token = ""
 # This is enabled by default, but can be disabled if undesired.
 #enable_cache = true
 
-# Path to the cache file that stores failed listens. Defaults to
-# `$XDG_DATA_HOME/listenbrainz-mpd-cache.sqlite3` or
-# `$HOME/.local/share/listenbrainz-mpd-cache.sqlite3` if unset.
+# Path to the cache file that stores failed listens. Defaults to:
+# Linux: 
+#   `$XDG_DATA_HOME/listenbrainz-mpd/submission-cache.sqlite3` or
+#   `$HOME/.local/share/listenbrainz-mpd/submission-cache.sqlite3` if XDG_DATA_HOME is not set.
+# macOS:
+#   `$HOME/Library/Application Support/listenbrainz-mpd/submission-cache.sqlite3`
+# Windows:
+#   `{FOLDERID_LocalAppData}\listenbrainz-mpd\submission-cache.sqlite3`
+#
+# If directory components of the path do not exist, they will be created.
 #cache_file = "/some/other/path/filename.db"
 
 # This section configures how the application connects to your MPD server.
