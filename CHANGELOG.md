@@ -1,3 +1,19 @@
+# 2.3.4 (2024-04-11)
+
+ - Change default location of submission cache file to better match the XDG spec.
+
+   The new default locations:
+   |Platform| Path|
+   |-|-|
+   |Linux|`$XDG_DATA_HOME/listenbrainz-mpd/submission-cache.sqlite3` or `$HOME/.local/share/listenbrainz-mpd/submission-cache.sqlite3` if `XDG_DATA_HOME` is not set|
+   |macOS|`$HOME/Library/Application Support/listenbrainz-mpd/submission-cache.sqlite3`|
+   |Windows|`{FOLDERID_LocalAppData}\listenbrainz-mpd\submission-cache.sqlite3`|
+   
+   The old default location will continue to be used if no path is explicitly configured and the old path exists.
+ - Fix directories for submission cache file location not being created when missing ([#15](https://codeberg.org/elomatreb/listenbrainz-mpd/issues/15), thanks to [GioF71](https://codeberg.org/GioF71)).
+ - Fix the explicit `cache_file` config option not doing anything ([#16](https://codeberg.org/elomatreb/listenbrainz-mpd/issues/16), thanks to [GioF71](https://codeberg.org/GioF71)).
+ - Dependency updates.
+
 # 2.3.3 (2024-02-07)
 
  - Fix repeated tracks in certain situations not being counted as separate listens ([#7](https://codeberg.org/elomatreb/listenbrainz-mpd/issues/7), [#14](https://codeberg.org/elomatreb/listenbrainz-mpd/pulls/14), thanks to koraynilay).
