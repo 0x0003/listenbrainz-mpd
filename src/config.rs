@@ -2,6 +2,7 @@ use std::{
     env,
     fs::{self, File},
     io::{self, ErrorKind, Write},
+    os::unix::fs::{DirBuilderExt, OpenOptionsExt},
     path::PathBuf,
 };
 
@@ -214,13 +215,21 @@ pub fn create_default_config() -> Result<()> {
 
     // Create directories if necessary
     if let Some(p) = path.parent() {
-        fs::create_dir_all(p)
-            .with_context(|| format!("Failed to create directories: {}", p.display()))?;
+        fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(p)
+            .with_context(|| format!("Failed to create config directories at: {}", p.display()))?;
     }
 
     // Create the actual config file and write the contents into it, but only if it
     // does not already exist
-    match File::options().write(true).create_new(true).open(&path) {
+    match File::options()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&path)
+    {
         Ok(mut f) => {
             f.write_all(DEFAULT).with_context(|| {
                 format!(

@@ -1,5 +1,6 @@
 use std::{
     fs,
+    os::unix::fs::DirBuilderExt,
     thread::{self, JoinHandle},
 };
 
@@ -36,12 +37,16 @@ impl CacheActor {
         // Ensure the cache directory exists so that the database file can be created if
         // necessary
         if let Some(cache_file_dir) = cache_file.parent() {
-            fs::create_dir_all(cache_file_dir).with_context(|| {
-                format!(
-                    "Failed to create submission cache directory at {}",
-                    cache_file_dir.display()
-                )
-            })?;
+            fs::DirBuilder::new()
+                .recursive(true)
+                .mode(0o700)
+                .create(cache_file_dir)
+                .with_context(|| {
+                    format!(
+                        "Failed to create submission cache directory at {}",
+                        cache_file_dir.display()
+                    )
+                })?;
         }
 
         let db = Connection::open(cache_file).with_context(|| {
