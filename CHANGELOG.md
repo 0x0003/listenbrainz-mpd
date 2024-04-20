@@ -1,3 +1,9 @@
+# 2.3.5 (2024-04-20)
+
+ - Fix configuration files and necessary directories for the config or cache location being created with world-readable permissions.
+ - Fix build on Windows.
+ - Dependency updates.
+
 # 2.3.4 (2024-04-11)
 
  - Change default location of submission cache file to better match the XDG spec.
