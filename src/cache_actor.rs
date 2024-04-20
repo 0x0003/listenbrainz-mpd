@@ -1,6 +1,7 @@
+#[cfg(unix)]
+use std::os::unix::fs::DirBuilderExt;
 use std::{
     fs,
-    os::unix::fs::DirBuilderExt,
     thread::{self, JoinHandle},
 };
 
@@ -37,9 +38,13 @@ impl CacheActor {
         // Ensure the cache directory exists so that the database file can be created if
         // necessary
         if let Some(cache_file_dir) = cache_file.parent() {
-            fs::DirBuilder::new()
+            let mut builder = fs::DirBuilder::new();
+
+            #[cfg(unix)]
+            builder.mode(0o700);
+
+            builder
                 .recursive(true)
-                .mode(0o700)
                 .create(cache_file_dir)
                 .with_context(|| {
                     format!(

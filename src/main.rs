@@ -3,9 +3,10 @@ mod cli;
 mod config;
 mod submission_actor;
 
+#[cfg(unix)]
+use std::path::Path;
 use std::{
     cmp,
-    path::Path,
     pin::Pin,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -20,8 +21,10 @@ use mpd_client::{
     tag::Tag,
 };
 use serde::{Serialize, Serializer};
+#[cfg(unix)]
+use tokio::net::UnixStream;
 use tokio::{
-    net::{TcpStream, UnixStream},
+    net::TcpStream,
     signal::ctrl_c,
     time::{sleep, Sleep},
 };
@@ -95,9 +98,16 @@ async fn connect(config: &Configuration) -> Result<(Client, ConnectionEvents)> {
 
     if config.mpd_host.starts_with('/') {
         // If the host value starts with a slash, assume it's a path to a Unix socket
-        connect_unix(Path::new(&config.mpd_host), password)
-            .await
-            .with_context(|| format!("Failed to connect via Unix socket at {}", config.mpd_host))
+        #[cfg(unix)]
+        {
+            connect_unix(Path::new(&config.mpd_host), password)
+                .await
+                .with_context(|| {
+                    format!("Failed to connect via Unix socket at {}", config.mpd_host)
+                })
+        }
+        #[cfg(not(unix))]
+        anyhow::bail!("Unix sockets not supported");
     } else {
         // Otherwise assume it's a hostname or bare IP address
         connect_tcp(&config.mpd_host, config.mpd_port, password)
@@ -123,6 +133,7 @@ async fn connect_tcp(
         .map_err(Into::into)
 }
 
+#[cfg(unix)]
 async fn connect_unix(path: &Path, password: Option<&str>) -> Result<(Client, ConnectionEvents)> {
     debug!(?path, "connecting via Unix socket");
     let socket = UnixStream::connect(path).await?;

@@ -1,8 +1,9 @@
+#[cfg(unix)]
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::{
     env,
     fs::{self, File},
     io::{self, ErrorKind, Write},
-    os::unix::fs::{DirBuilderExt, OpenOptionsExt},
     path::PathBuf,
 };
 
@@ -215,21 +216,25 @@ pub fn create_default_config() -> Result<()> {
 
     // Create directories if necessary
     if let Some(p) = path.parent() {
-        fs::DirBuilder::new()
+        let mut builder = fs::DirBuilder::new();
+
+        #[cfg(unix)]
+        builder.mode(0o700);
+
+        builder
             .recursive(true)
-            .mode(0o700)
             .create(p)
             .with_context(|| format!("Failed to create config directories at: {}", p.display()))?;
     }
 
     // Create the actual config file and write the contents into it, but only if it
     // does not already exist
-    match File::options()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(&path)
-    {
+    let mut file_options = File::options();
+
+    #[cfg(unix)]
+    file_options.mode(0o600);
+
+    match file_options.write(true).create_new(true).open(&path) {
         Ok(mut f) => {
             f.write_all(DEFAULT).with_context(|| {
                 format!(
