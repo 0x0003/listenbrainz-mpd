@@ -21,6 +21,13 @@ A [ListenBrainz](https://listenbrainz.org) submission client for [MPD](https://w
      Run `cargo install listenbrainz-mpd`.
      **Note**: If you want to use the provided [systemd service file](./listenbrainz-mpd.service), you need to enable the `systemd` cargo feature (`-F systemd`).
 
+     #### Other Options
+
+     **Note**: These are maintained by third parties.
+
+     - Nix: `listenbrainz-mpd`
+     - Docker: [GioF71/listenbrainz-mpd-docker](https://github.com/GioF71/listenbrainz-mpd-docker)
+
   2. Configure your ListenBrainz user token through the configuration file or the `LISTENBRAINZ_TOKEN` environment variable.
 
      Place the [sample configuration file](./config.toml.sample) in the appropriate location and fill in your ListenBrainz user token and potentially other relevant configuration.
