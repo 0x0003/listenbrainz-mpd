@@ -1,3 +1,10 @@
+# 2.3.6 (2024-05-19)
+
+ - Fix missing timeout on HTTP API requests potentially resulting submissions getting stuck forever (related to [#19](https://codeberg.org/elomatreb/listenbrainz-mpd/issues/19), thanks to [koraynilay](https://codeberg.org/koraynilay)).
+ - Print warning log messages by default when no filter is configured.
+ - When built with the `systemd` feature, hide log message timestamps (because journald adds them).
+ - Dependency updates.
+
 # 2.3.5 (2024-04-20)
 
  - Fix configuration files and necessary directories for the config or cache location being created with world-readable permissions.
