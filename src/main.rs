@@ -28,7 +28,7 @@ use tokio::{
     signal::ctrl_c,
     time::{sleep, Sleep},
 };
-use tracing::{debug, error, info, info_span, trace, warn, Instrument};
+use tracing::{debug, error, info, info_span, level_filters::LevelFilter, trace, warn, Instrument};
 use tracing_subscriber::EnvFilter;
 
 use crate::{
@@ -48,9 +48,14 @@ const FEEDBACK_CHANNEL_NAME: &str = "listenbrainz_feedback";
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_env("LISTENBRAINZ_MPD_LOG"))
-        .init();
+    let subscriber = tracing_subscriber::fmt().with_env_filter(
+        EnvFilter::builder()
+            .with_default_directive(LevelFilter::WARN.into())
+            .with_env_var("LISTENBRAINZ_MPD_LOG")
+            .from_env_lossy(),
+    );
+
+    subscriber.init();
 
     let args = CliArgs::parse();
 
