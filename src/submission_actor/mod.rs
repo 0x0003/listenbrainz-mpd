@@ -128,6 +128,7 @@ fn build_http_client(configuration: &Configuration) -> Client {
     headers.insert(header::ACCEPT, HeaderValue::from_static("application/json"));
 
     reqwest::ClientBuilder::new()
+        .timeout(Duration::from_secs(30))
         .default_headers(headers)
         .build()
         .expect("failed to create client")
