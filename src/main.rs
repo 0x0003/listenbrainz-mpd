@@ -55,6 +55,11 @@ async fn main() -> Result<()> {
             .from_env_lossy(),
     );
 
+    // Disable timestamps when running under systemd since journald adds them by
+    // itself
+    #[cfg(feature = "systemd")]
+    subscriber.without_time().init();
+    #[cfg(not(feature = "systemd"))]
     subscriber.init();
 
     let args = CliArgs::parse();
