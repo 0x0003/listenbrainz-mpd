@@ -175,15 +175,32 @@ pub fn load(path: Option<PathBuf>) -> Result<Configuration> {
         // Check if submission cache at legacy path exists (technically against
         // XDG spec)
         let legacy = base.join("listenbrainz-mpd-cache.sqlite3");
+        let new_dir = base.join(env!("CARGO_PKG_NAME"));
+        let new = new_dir.join("submission-cache.sqlite3");
         if legacy.is_file() {
             warn!(
                 cache_file = ?legacy,
-                "using deprecated submission cache location"
+                "found database at deprecated submission cache location"
             );
-            legacy
+
+            // Attempt to create directory for new submission cache 
+            if let Err(e) = std::fs::create_dir(&new_dir) {
+                warn!("Failed to create directory for new submission cache location, using legacy location: {e}");
+                legacy
+            // Attempt to move submission cache to new location
+            } else if let Err(e) = std::fs::rename(&legacy, &new) {
+                warn!("Failed to migrate submission cache location, using legacy location: {e}");
+                legacy
+            } else {
+                warn!(
+                    cache_file = ?new,
+                    "migrated submission cache to new location"
+                );
+                new
+            }
         } else {
             // If it does not exist, use the XDG-compliant location
-            base.join(concat!(env!("CARGO_PKG_NAME"), "/submission-cache.sqlite3"))
+            new
         }
     });
 
