@@ -1,3 +1,8 @@
+# 2.3.7 (2024-06-05)
+
+ - Automatically attempt to migrate the submission cache from the deprecated location (see version 2.3.4) to the new default location if it is not explicitly configured ([#20](https://codeberg.org/elomatreb/listenbrainz-mpd/pulls/20), thanks to [Kladky](https://codeberg.org/Kladky)).
+ - Dependency updates.
+
 # 2.3.6 (2024-05-19)
 
  - Fix missing timeout on HTTP API requests potentially resulting submissions getting stuck forever (related to [#19](https://codeberg.org/elomatreb/listenbrainz-mpd/issues/19), thanks to [koraynilay](https://codeberg.org/koraynilay)).
