@@ -2,6 +2,7 @@
 use std::os::unix::fs::DirBuilderExt;
 use std::{
     fs,
+    path::PathBuf,
     thread::{self, JoinHandle},
 };
 
@@ -12,7 +13,7 @@ use tokio::sync::{
     mpsc::{self, UnboundedReceiver, UnboundedSender},
     oneshot,
 };
-use tracing::{debug, error, info_span};
+use tracing::{debug, error, info, info_span, warn};
 
 use crate::config::Configuration;
 
@@ -32,35 +33,7 @@ impl CacheActor {
             return Ok(CacheActor(None));
         }
 
-        let cache_file = &config.cache_file;
-        debug!(?cache_file, "opening submission cache");
-
-        // Ensure the cache directory exists so that the database file can be created if
-        // necessary
-        if let Some(cache_file_dir) = cache_file.parent() {
-            let mut builder = fs::DirBuilder::new();
-
-            #[cfg(unix)]
-            builder.mode(0o700);
-
-            builder
-                .recursive(true)
-                .create(cache_file_dir)
-                .with_context(|| {
-                    format!(
-                        "Failed to create submission cache directory at {}",
-                        cache_file_dir.display()
-                    )
-                })?;
-        }
-
-        let db = Connection::open(cache_file).with_context(|| {
-            format!(
-                "Failed to open submission cache file at {}",
-                cache_file.display()
-            )
-        })?;
-
+        let db = open_cache_file(config)?;
         let (tx, rx) = mpsc::unbounded_channel();
 
         let handle = thread::spawn(move || run(rx, db));
@@ -95,6 +68,81 @@ impl CacheActor {
 
         responder_rx.await.expect("Cache actor did not respond")
     }
+}
+
+fn open_cache_file(config: &Configuration) -> Result<Connection> {
+    let default_path = default_submission_cache_path();
+    let legacy_path = legacy_default_submission_cache_path();
+
+    let mut cache_file = config.cache_file.as_deref().unwrap_or(&default_path);
+
+    debug!(?cache_file, "opening submission cache");
+
+    // Ensure the cache directory exists so that the database file can be created if
+    // necessary
+    if let Some(cache_file_dir) = cache_file.parent() {
+        debug!(
+            ?cache_file_dir,
+            "creating submission cache file directories"
+        );
+        let mut builder = fs::DirBuilder::new();
+
+        #[cfg(unix)]
+        builder.mode(0o700);
+
+        builder
+            .recursive(true)
+            .create(cache_file_dir)
+            .with_context(|| {
+                format!(
+                    "Failed to create submission cache directory at {}",
+                    cache_file_dir.display()
+                )
+            })?;
+    }
+
+    // If the cache file location is not explicitly set and the cache file exists at
+    // the old location but not at the new default location, attempt to move it
+    if config.cache_file.is_none() && !cache_file.is_file() && legacy_path.is_file() {
+        debug!(old = ?legacy_path, new = ?cache_file, "attempting to move submission cache file");
+        match fs::rename(&legacy_path, cache_file) {
+            Ok(()) => {
+                info!(old = ?legacy_path, new = ?cache_file, "migrated submission cache to new location");
+            }
+            Err(e) => {
+                // Stick to the old location if the migration fails
+                warn!(
+                    old = ?legacy_path,
+                    new = ?cache_file,
+                    error = ?e,
+                    "failed to move submission cache to new location, sticking to old location"
+                );
+                cache_file = &legacy_path;
+            }
+        }
+    }
+
+    Connection::open(cache_file).with_context(|| {
+        format!(
+            "Failed to open submission cache file at {}",
+            cache_file.display()
+        )
+    })
+}
+
+/// Returns the default location of the submission cache.
+fn default_submission_cache_path() -> PathBuf {
+    let mut p = dirs::data_local_dir().expect("No state/cache directory");
+    p.push(env!("CARGO_PKG_NAME"));
+    p.push("submission-cache.sqlite3");
+    p
+}
+
+/// Returns the old default path of the submission cache.
+fn legacy_default_submission_cache_path() -> PathBuf {
+    let mut base = dirs::data_local_dir().expect("No state/cache directory");
+    base.push("listenbrainz-mpd-cache.sqlite3");
+    base
 }
 
 fn run(mut receiver: UnboundedReceiver<CacheAction>, mut db: Connection) {

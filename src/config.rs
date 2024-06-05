@@ -9,7 +9,7 @@ use std::{
 
 use anyhow::{anyhow, bail, Context, Error, Result};
 use serde::Deserialize;
-use tracing::{debug, warn};
+use tracing::debug;
 
 /// The default configuration file.
 pub const DEFAULT: &[u8] = include_str!("../config.toml.sample").as_bytes();
@@ -29,12 +29,12 @@ pub struct Configuration {
     pub mpd_password: Option<String>,
     /// Whether to enable caching failed submissions
     pub enable_cache: bool,
-    /// Path to the file used for caching listens
-    pub cache_file: PathBuf,
     /// Whether to submit genre tags
     pub submit_genres_as_folksonomy: bool,
     /// Separator character for single-value genre tags
     pub genre_separator: Option<char>,
+    /// Path to the file used for caching listens
+    pub cache_file: Option<PathBuf>,
 }
 
 fn default_path() -> PathBuf {
@@ -169,41 +169,6 @@ pub fn load(path: Option<PathBuf>) -> Result<Configuration> {
         None => String::from("localhost"),
     };
 
-    let cache_file = config.submission.cache_file.unwrap_or_else(|| {
-        let base = dirs::data_local_dir().expect("No state/cache directory");
-
-        // Check if submission cache at legacy path exists (technically against
-        // XDG spec)
-        let legacy = base.join("listenbrainz-mpd-cache.sqlite3");
-        let new_dir = base.join(env!("CARGO_PKG_NAME"));
-        let new = new_dir.join("submission-cache.sqlite3");
-        if legacy.is_file() {
-            warn!(
-                cache_file = ?legacy,
-                "found database at deprecated submission cache location"
-            );
-
-            // Attempt to create directory for new submission cache 
-            if let Err(e) = std::fs::create_dir(&new_dir) {
-                warn!("Failed to create directory for new submission cache location, using legacy location: {e}");
-                legacy
-            // Attempt to move submission cache to new location
-            } else if let Err(e) = std::fs::rename(&legacy, &new) {
-                warn!("Failed to migrate submission cache location, using legacy location: {e}");
-                legacy
-            } else {
-                warn!(
-                    cache_file = ?new,
-                    "migrated submission cache to new location"
-                );
-                new
-            }
-        } else {
-            // If it does not exist, use the XDG-compliant location
-            new
-        }
-    });
-
     Ok(Configuration {
         token,
         api_url,
@@ -211,7 +176,7 @@ pub fn load(path: Option<PathBuf>) -> Result<Configuration> {
         mpd_port,
         mpd_password: config.mpd.password,
         enable_cache: config.submission.enable_cache,
-        cache_file,
+        cache_file: config.submission.cache_file,
         submit_genres_as_folksonomy: config.submission.genres_as_folksonomy,
         genre_separator: config.submission.genre_separator,
     })
