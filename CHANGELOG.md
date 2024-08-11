@@ -1,3 +1,9 @@
+# 2.3.8 (2024-08-11)
+
+ - Allow `--send-feedback` to be passed together with `--config` ([#21](https://codeberg.org/elomatreb/listenbrainz-mpd/issues/21), thanks to [quantenzitrone](https://codeberg.org/quantenzitrone)).
+ - Exit with error when the configuration file path provided with `--config` does not exist.
+ - Dependency updates.
+
 # 2.3.7 (2024-06-05)
 
  - Automatically attempt to migrate the submission cache from the deprecated location (see version 2.3.4) to the new default location if it is not explicitly configured ([#20](https://codeberg.org/elomatreb/listenbrainz-mpd/pulls/20), thanks to [Kladky](https://codeberg.org/Kladky)).
