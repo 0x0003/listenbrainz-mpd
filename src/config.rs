@@ -44,6 +44,7 @@ fn default_path() -> PathBuf {
 }
 
 pub fn load(path: Option<PathBuf>) -> Result<Configuration> {
+    let path_from_cli = path.is_some();
     let path = &path.unwrap_or_else(default_path);
 
     debug!(?path, "loading configuration file");
@@ -56,7 +57,7 @@ pub fn load(path: Option<PathBuf>) -> Result<Configuration> {
                 format!("Failed to parse configuration file at {}", path.display())
             })?
         }
-        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+        Err(e) if e.kind() == io::ErrorKind::NotFound && !path_from_cli => {
             // Configuration file was not found, use the default config
             debug!("configuration file not found");
             RawConfiguration::default()
