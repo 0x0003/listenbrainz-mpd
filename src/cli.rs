@@ -12,7 +12,7 @@ pub struct CliArgs {
     #[clap(long, action = ArgAction::SetTrue, exclusive = true)]
     pub create_default_config: bool,
     /// Submit feedback for the currently playing song and exit.
-    #[clap(long, exclusive = true, value_enum, value_name = "FEEDBACK")]
+    #[clap(long, value_enum, value_name = "FEEDBACK")]
     pub send_feedback: Option<Feedback>,
 }
 
