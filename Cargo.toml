@@ -1,7 +1,7 @@
 [package]
 name = "listenbrainz-mpd"
 version = "2.3.8"
-edition = "2021"
+edition = "2024"
 description = "ListenBrainz submission client for MPD"
 license = "AGPL-3.0-only"
 keywords = ["mpd", "listenbrainz", "musicbrainz", "scrobbling", "scrobbler"]
@@ -24,10 +24,10 @@ systemd = ["dep:sd-notify"]
 anyhow = "1.0.82"
 bytes = "1.6.0"
 clap = { version = "4.5.4", features = ["cargo", "derive"] }
-dirs = "5.0.1"
+dirs = "6.0.0"
 mpd_client = "1.4.1"
 reqwest = { version = "0.12.3", features = ["json"], default-features = false }
-rusqlite = "0.31.0"
+rusqlite = "0.34.0"
 sd-notify = { version = "0.4.1", optional = true }
 serde = { version = "1.0.197", features = ["derive"] }
 serde_json = { version = "1.0.115", features = ["raw_value"] }
