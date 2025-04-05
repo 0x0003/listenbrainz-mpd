@@ -70,13 +70,13 @@ impl SubmissionActor {
     pub fn start(
         configuration: Configuration,
         cache_actor: CacheActor,
-    ) -> Result<(SubmissionActor, JoinHandle<()>)> {
+    ) -> (SubmissionActor, JoinHandle<()>) {
         let http_client = build_http_client(&configuration);
 
         let (tx, rx) = mpsc::unbounded_channel();
         let handle = tokio::spawn(run(http_client, configuration, cache_actor, rx));
 
-        Ok((SubmissionActor { tx }, handle))
+        (SubmissionActor { tx }, handle)
     }
 
     /// Submit a "Now Playing" event.
