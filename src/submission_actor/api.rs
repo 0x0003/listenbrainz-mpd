@@ -9,7 +9,7 @@ use serde::Serialize;
 use serde_json::value::RawValue;
 use tracing::warn;
 
-use crate::{config::Configuration, is_valid_mbid, Feedback};
+use crate::{Feedback, config::Configuration, is_valid_mbid};
 
 /// Maximum number of tags the ListenBrainz server will accept.
 const MAX_TAGS: usize = 50;

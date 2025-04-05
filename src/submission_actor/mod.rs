@@ -4,12 +4,12 @@ mod api;
 
 use std::{sync::OnceLock, time::Duration};
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use bytes::Bytes;
 use mpd_client::responses::Song;
 use reqwest::{
-    header::{self, HeaderMap, HeaderValue},
     Client, Request, StatusCode,
+    header::{self, HeaderMap, HeaderValue},
 };
 use tokio::{
     sync::{
@@ -22,7 +22,7 @@ use tokio::{
 use tracing::{debug, error, trace, warn};
 
 use self::api::JsonBody;
-use crate::{cache_actor::CacheActor, config::Configuration, Feedback};
+use crate::{Feedback, cache_actor::CacheActor, config::Configuration};
 
 /// API sub-path to which listen records are submitted.
 const LISTENBRAINZ_SUBMISSION_PATH: &str = "/1/submit-listens";

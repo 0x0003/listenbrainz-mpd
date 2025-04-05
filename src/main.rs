@@ -26,9 +26,9 @@ use tokio::net::UnixStream;
 use tokio::{
     net::TcpStream,
     signal::ctrl_c,
-    time::{sleep, Sleep},
+    time::{Sleep, sleep},
 };
-use tracing::{debug, error, info, info_span, level_filters::LevelFilter, trace, warn, Instrument};
+use tracing::{Instrument, debug, error, info, info_span, level_filters::LevelFilter, trace, warn};
 use tracing_subscriber::EnvFilter;
 
 use crate::{

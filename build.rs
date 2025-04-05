@@ -14,7 +14,7 @@ fn main() {
     use std::{env, fs::create_dir_all, path::PathBuf};
 
     use clap::{CommandFactory, ValueEnum};
-    use clap_complete::{generate_to, Shell};
+    use clap_complete::{Shell, generate_to};
 
     let out_dir = env::var_os("COMPLETIONS_OUT_DIR")
         .map(PathBuf::from)
