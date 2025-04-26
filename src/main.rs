@@ -298,7 +298,7 @@ async fn handle_state_change(
 
     if same_song && state.play_state == new_play_state {
         // Apply a heuristic to guess when a single track is being played on repeat.
-        if is_same_track_on_repeat(&new_status) {
+        if is_same_track_on_repeat(&new_status) && state.listen_submitted {
             trace!("same track is being played on repeat");
             start_new_listen(new_song.as_ref(), state, &new_play_state, http_actor);
         } else {
@@ -501,12 +501,18 @@ fn is_same_song(a: Option<&SongInQueue>, b: Option<&SongInQueue>) -> bool {
 fn is_same_track_on_repeat(status: &Status) -> bool {
     // Check if the elapsed time is very close to the start of the track. We cannot
     // just check for the time going to zero because the server sending the idle
-    // notification and us requesting the new state introduces latency. The value
-    // was chosen experimentally.
+    // notification and us requesting the new state introduces latency.
     // Then apply the rules to detect the situations listed above. This may
     // interpret seeking to the very beginning of the current track as starting a
     // new listen, but this is unavoidable.
-    status.elapsed <= Some(Duration::from_millis(200))
+    let (Some(elapsed), Some(duration)) = (status.elapsed, status.duration) else {
+        // The length heuristic cannot be applied if the elapsed time and total duration
+        // aren't known.
+        return false;
+    };
+
+    // Check if the new position is in the first 1% of the tracks total length
+    elapsed.div_duration_f64(duration) <= 0.01
         && status.repeat
         && (status.single != SingleMode::Disabled || status.playlist_length == 1)
 }
