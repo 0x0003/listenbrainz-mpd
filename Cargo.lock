@@ -713,7 +713,7 @@ checksum = "cd945864f07fe9f5371a27ad7b52a172b4b499999f1d97574c9fa68373937e12"
 
 [[package]]
 name = "listenbrainz-mpd"
-version = "2.3.8"
+version = "2.3.9"
 dependencies = [
  "anyhow",
  "bytes",

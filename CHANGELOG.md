@@ -1,3 +1,9 @@
+# 2.3.9 (2025-07-05)
+
+ - Fix some more cases of listens sometimes not being submitted when playing a single track on repeat ([#7](https://codeberg.org/elomatreb/listenbrainz-mpd/issues/7) again, thanks to [Kladky](https://codeberg.org/Kladky)).
+ - Fix some tracks where MPD reports a duration of 0 blocking submission to Listenbrainz ([#23](https://codeberg.org/elomatreb/listenbrainz-mpd/issues/23), thanks to [DeeUnderscore](https://codeberg.org/DeeUnderscore)).
+ - Dependency updates.
+
 # 2.3.8 (2024-08-11)
 
  - Allow `--send-feedback` to be passed together with `--config` ([#21](https://codeberg.org/elomatreb/listenbrainz-mpd/issues/21), thanks to [quantenzitrone](https://codeberg.org/quantenzitrone)).

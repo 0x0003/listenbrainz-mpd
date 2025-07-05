@@ -1,6 +1,6 @@
 [package]
 name = "listenbrainz-mpd"
-version = "2.3.8"
+version = "2.3.9"
 edition = "2024"
 description = "ListenBrainz submission client for MPD"
 license = "AGPL-3.0-only"
