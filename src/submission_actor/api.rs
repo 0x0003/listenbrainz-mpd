@@ -283,7 +283,7 @@ struct AdditionalInfo {
     work_mbids: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tracknumber: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "should_skip_duration")]
     duration_ms: Option<u128>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     tags: Vec<String>,
@@ -321,4 +321,14 @@ fn validate_multiple_mbid(vals: &mut Vec<String>) {
 
         is_valid
     });
+}
+
+/// Decide if the `duration_ms` field should be skipped in the requests.
+///
+/// This is a hack/workaround for https://codeberg.org/elomatreb/listenbrainz-mpd/issues/23.
+fn should_skip_duration(i: &Option<u128>) -> bool {
+    match i {
+        None | Some(0) => true,
+        Some(_) => false,
+    }
 }
