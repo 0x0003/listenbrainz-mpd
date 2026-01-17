@@ -12,9 +12,9 @@ A [ListenBrainz](https://listenbrainz.org) submission client for [MPD](https://w
 
   1. Install.
 
-     #### AUR (Arch Linux)
+     #### Arch Linux
 
-     Install the [`listenbrainz-mpd`](https://aur.archlinux.org/packages/listenbrainz-mpd) AUR package.
+     Install the [`listenbrainz-mpd`](https://archlinux.org/packages/extra/x86_64/listenbrainz-mpd/) package.
 
      #### Cargo
 
