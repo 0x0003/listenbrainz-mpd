@@ -26,8 +26,11 @@ bytes = "1.6.0"
 clap = { version = "4.5.4", features = ["cargo", "derive"] }
 dirs = "6.0.0"
 mpd_client = "1.4.1"
-reqwest = { version = "0.12.3", features = ["json"], default-features = false }
-rusqlite = "0.36.0"
+reqwest = { version = "0.13.2", features = [
+    "json",
+    "query",
+], default-features = false }
+rusqlite = "0.38.0"
 sd-notify = { version = "0.4.1", optional = true }
 serde = { version = "1.0.197", features = ["derive"] }
 serde_json = { version = "1.0.115", features = ["raw_value"] }
@@ -40,7 +43,7 @@ tokio = { version = "1.37.0", features = [
     "sync",
 ] }
 tokio-stream = "0.1.15"
-toml = "0.8.12"
+toml = "0.9.11"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 
