@@ -303,11 +303,11 @@ impl AdditionalInfo {
 }
 
 fn validate_single_mbid(val: &mut Option<String>) {
-    if let Some(mbid) = val {
-        if !is_valid_mbid(mbid) {
-            warn!(?mbid, "invalid MBID, ignoring");
-            *val = None;
-        }
+    if let Some(mbid) = val
+        && !is_valid_mbid(mbid)
+    {
+        warn!(?mbid, "invalid MBID, ignoring");
+        *val = None;
     }
 }
 

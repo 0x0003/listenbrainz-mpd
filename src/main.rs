@@ -213,15 +213,15 @@ async fn run(
     let _ = sd_notify::notify(false, &[sd_notify::NotifyState::Ready]);
 
     // Send initial now_playing if we start while a song is playing
-    if let Some(song) = &state.song {
-        if state.play_state == PlayState::Playing {
-            debug!(
-                song = %song.song.url,
-                required_playtime = ?listen_required,
-                "starting with initial song"
-            );
-            http_actor.now_playing(song.song.clone());
-        }
+    if let Some(song) = &state.song
+        && state.play_state == PlayState::Playing
+    {
+        debug!(
+            song = %song.song.url,
+            required_playtime = ?listen_required,
+            "starting with initial song"
+        );
+        http_actor.now_playing(song.song.clone());
     }
 
     debug!("entering main loop");
@@ -357,10 +357,10 @@ fn start_new_listen(
     state.listen_finished = Box::pin(sleep(required_playtime));
     state.listen_submitted = false;
 
-    if let Some(song) = &new_song {
-        if *new_play_state == PlayState::Playing {
-            http_actor.now_playing(song.song.clone());
-        }
+    if let Some(song) = &new_song
+        && *new_play_state == PlayState::Playing
+    {
+        http_actor.now_playing(song.song.clone());
     }
 }
 
