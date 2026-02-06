@@ -327,7 +327,7 @@ where
                 debug!("trying again");
             }
             other => {
-                bail!("Unexpected status code from ListenBrainz API ({other:?}");
+                bail!("Unexpected status code from ListenBrainz API ({other})");
             }
         }
     }
