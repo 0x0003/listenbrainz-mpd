@@ -1,3 +1,7 @@
+# <unreleased>
+
+- Add support for connecting via abstract sockets, prefixed with '@' ([#42](https://codeberg.org/elomatreb/listenbrainz-mpd/pulls/42), by [Kladky](https://codeberg.org/Kladky))
+
 # 2.3.9 (2025-07-05)
 
  - Fix some more cases of listens sometimes not being submitted when playing a single track on repeat ([#7](https://codeberg.org/elomatreb/listenbrainz-mpd/issues/7) again, thanks to [Kladky](https://codeberg.org/Kladky)).

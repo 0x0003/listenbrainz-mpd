@@ -6,6 +6,7 @@ mod submission_actor;
 #[cfg(unix)]
 use std::path::Path;
 use std::{
+    borrow::Cow,
     cmp,
     pin::Pin,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -106,11 +107,24 @@ async fn send_feedback(mpd_client: Client, feedback: Feedback) -> Result<()> {
 async fn connect(config: &Configuration) -> Result<(Client, ConnectionEvents)> {
     let password = config.mpd_password.as_deref();
 
-    if config.mpd_host.starts_with('/') {
-        // If the host value starts with a slash, assume it's a path to a Unix socket
+    // If the host value starts with a slash, assume it's a path to a Unix socket
+    let socket_path = if config.mpd_host.starts_with('/') {
+        Some(Cow::Borrowed(&config.mpd_host))
+    // If it starts with an @, it's an abstract socket
+    } else if let Some(abstract_socket) = config.mpd_host.strip_prefix('@') {
+        // The '@' character being used is just for convenience, as it's difficult
+        // and potentially confusing for most users to have to insert a null character.
+        //
+        // This is what MPD itself, and other clients like rmpc and mpdris2-rs do.
+        Some(Cow::Owned(String::from('\0') + abstract_socket))
+    } else {
+        None
+    };
+
+    if let Some(socket_path) = socket_path {
         #[cfg(unix)]
         {
-            connect_unix(Path::new(&config.mpd_host), password)
+            connect_unix(Path::new(&*socket_path), password)
                 .await
                 .with_context(|| {
                     format!("Failed to connect via Unix socket at {}", config.mpd_host)
