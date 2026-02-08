@@ -51,6 +51,7 @@ token = ""
 # Address of the MPD server.
 # This may be an IP address or a hostname. If no port is specified, port 6600 is assumed.
 # If the value starts with a slash ("/"), it specifies a path to a Unix socket instead.
+# If the value starts with an at ("@"), it specifies a path to an abstract unix socket.
 #address = "localhost:6600"
 
 # MPD server password.
