@@ -112,11 +112,15 @@ async fn connect(config: &Configuration) -> Result<(Client, ConnectionEvents)> {
         Some(Cow::Borrowed(&config.mpd_host))
     // If it starts with an @, it's an abstract socket
     } else if let Some(abstract_socket) = config.mpd_host.strip_prefix('@') {
-        // The '@' character being used is just for convenience, as it's difficult
-        // and potentially confusing for most users to have to insert a null character.
-        //
-        // This is what MPD itself, and other clients like rmpc and mpdris2-rs do.
-        Some(Cow::Owned(String::from('\0') + abstract_socket))
+        if cfg!(target_os = "linux") {
+            // The '@' character being used is just for convenience, as it's difficult
+            // and potentially confusing for most users to have to insert a null character.
+            //
+            // This is what MPD itself, and other clients like rmpc and mpdris2-rs do.
+            Some(Cow::Owned(String::from('\0') + abstract_socket))
+        } else {
+            anyhow::bail!("Abstract sockets are only supported on Linux");
+        }
     } else {
         None
     };
