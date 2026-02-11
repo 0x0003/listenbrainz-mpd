@@ -105,13 +105,19 @@ pub fn load(path: Option<PathBuf>) -> Result<Configuration> {
         // optional. Note that if an abstract socket is being used, the format
         // will be `password@@abstract_socket`.
         let password_and_host = if let Some(password_and_host) = mpd_host.split_once("@@") {
-            Some(password_and_host)
+            if cfg!(target_os = "linux") {
+                Some(password_and_host)
+            } else {
+                anyhow::bail!("Abstract sockets are only supported on Linux");
+            }
         } else if !mpd_host.starts_with('@')
             && let Some(password_and_host) = mpd_host.split_once('@')
         {
             Some(password_and_host)
-        } else {
+        } else if cfg!(target_os = "linux") {
             None
+        } else {
+            anyhow::bail!("Abstract sockets are only supported on Linux");
         };
 
         if let Some((password, host)) = password_and_host {
