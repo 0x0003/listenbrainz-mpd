@@ -58,8 +58,10 @@ Environment variables will override the equivalent values from the <<Configurati
 
 *MPD_HOST*::
   Host of the MPD server.
-  May be a hostname, a bare IP address, or an absolute path to a Unix socket.
+  May be a hostname or a bare IP address.
   To use a server password, specify a value like _password_**@**_host_.
+  If the host starts with **/** it indicates the path to a Unix socket.
+  If the host starts with **@** it indicates the name of an abstract socket (Linux only).
 
 *MPD_PORT*::
   TCP port of the MPD server.
