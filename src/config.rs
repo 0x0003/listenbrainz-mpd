@@ -102,25 +102,11 @@ pub fn load(path: Option<PathBuf>) -> Result<Configuration> {
     // environment variables (compatible with tools like MPC)
     if let Some(mpd_host) = env_var("MPD_HOST")? {
         // The syntax of the value is `password@host`, with the password part
-        // optional. Note that if an abstract socket is being used, the format
-        // will be `password@@abstract_socket`.
-        let password_and_host = if let Some(password_and_host) = mpd_host.split_once("@@") {
-            if cfg!(target_os = "linux") {
-                Some(password_and_host)
-            } else {
-                anyhow::bail!("Abstract sockets are only supported on Linux");
-            }
-        } else if !mpd_host.starts_with('@')
-            && let Some(password_and_host) = mpd_host.split_once('@')
+        // optional. Note that if an abstract socket is being used (linux only), the
+        // format will be `password@@abstract_socket`.
+        if let Some((password, host)) = mpd_host.split_once('@')
+            && !password.is_empty()
         {
-            Some(password_and_host)
-        } else if cfg!(target_os = "linux") {
-            None
-        } else {
-            anyhow::bail!("Abstract sockets are only supported on Linux");
-        };
-
-        if let Some((password, host)) = password_and_host {
             debug!("found MPD_HOST environment variable with host and password");
             config.mpd.address = Some(host.to_owned());
             config.mpd.password = Some(password.to_owned());
@@ -203,7 +189,7 @@ pub fn load(path: Option<PathBuf>) -> Result<Configuration> {
 /// Parse the port from an address string of the form `address:port`. Returns
 /// the host portion and the port portion if found, None otherwise.
 fn split_address_port(address: &str) -> Option<(&str, &str)> {
-    if address.starts_with('/') | address.starts_with('@') {
+    if address.starts_with('/') || address.starts_with('@') {
         // Unix socket path, don't attempt to parse
         return None;
     }
