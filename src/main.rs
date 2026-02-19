@@ -6,7 +6,6 @@ mod submission_actor;
 #[cfg(unix)]
 use std::path::Path;
 use std::{
-    borrow::Cow,
     cmp,
     pin::Pin,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -109,7 +108,7 @@ async fn connect(config: &Configuration) -> Result<(Client, ConnectionEvents)> {
 
     // If the host value starts with a slash, assume it's a path to a Unix socket
     let socket_path = if config.mpd_host.starts_with('/') {
-        Some(Cow::Borrowed(&config.mpd_host))
+        Some(&config.mpd_host)
     // If it starts with an @, it's an abstract socket
     } else if let Some(abstract_socket) = config.mpd_host.strip_prefix('@') {
         // The '@' character being used is just for convenience, as it's difficult and
@@ -118,7 +117,7 @@ async fn connect(config: &Configuration) -> Result<(Client, ConnectionEvents)> {
         if cfg!(target_os = "linux") {
             // TODO: Use `SocketAddrExt::from_abstract_name` instead of relying on this
             // manual construction
-            Some(Cow::Owned(format!("\0{abstract_socket}")))
+            Some(&format!("\0{abstract_socket}"))
         } else {
             bail!("Abstract sockets (starting with '@') are only supported on Linux");
         }
@@ -129,7 +128,7 @@ async fn connect(config: &Configuration) -> Result<(Client, ConnectionEvents)> {
     if let Some(socket_path) = socket_path {
         #[cfg(unix)]
         {
-            connect_unix(Path::new(&*socket_path), password)
+            connect_unix(Path::new(socket_path), password)
                 .await
                 .with_context(|| {
                     format!("Failed to connect via Unix socket at {}", config.mpd_host)
