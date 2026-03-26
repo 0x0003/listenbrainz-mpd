@@ -177,13 +177,14 @@ fn metadata_from_song(config: &Configuration, song: Song) -> Option<TrackMetadat
 
 fn single_value(tags: &mut HashMap<Tag, Vec<String>>, tag: Tag, song: &str) -> Option<String> {
     if let Some(mut v) = tags.remove(&tag) {
-        if v.is_empty() {
-            return None;
-        } else if v.len() > 1 {
+        assert_ne!(v.len(), 0);
+
+        if v.len() > 1 {
             warn!(
                 song,
                 ?tag,
-                "multiple values for tag, only sending the first"
+                values = ?v,
+                "multiple values for single-value tag, only sending the first"
             );
         }
 
