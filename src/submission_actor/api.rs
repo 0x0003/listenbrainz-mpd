@@ -135,20 +135,30 @@ fn metadata_from_song(config: &Configuration, song: Song) -> Option<TrackMetadat
     let duration = song.duration;
     let song = song.url.as_str();
 
-    let Some(artist_name) = single_value(&mut tags, Tag::Artist, song) else {
-        warn!(song, "cannot submit track without artist tag");
-        return None;
-    };
-
+    // LB requires at least a title and an artist for submission
     let Some(track_name) = single_value(&mut tags, Tag::Title, song) else {
-        warn!(song, "cannot submit track without title tag");
+        warn!(track = song, "cannot submit track without title tag");
         return None;
     };
 
+    // The LB API expects a single artist string for mapping purposes, but MPD may
+    // return multiple values for the artist field, so join the artists into a
+    // single string if necessary, but also submit the separate artist names as part
+    // of the `additional_info` element
+    let Some(artist_names) = tags.remove(&Tag::Artist) else {
+        warn!(track = song, "cannot submit track without artist tag");
+        return None;
+    };
+    assert_ne!(artist_names.len(), 0);
+    let artist_name = artist_names.join(" & ");
+
+    // The release is optional
     let release_name = single_value(&mut tags, Tag::Album, song);
 
+    // All other metadata goes into the semi-free-form `additional_info` field
     let mut additional_info = AdditionalInfo {
         artist_mbids: tags.remove(&Tag::MusicBrainzArtistId).unwrap_or_default(),
+        artist_names,
         release_mbid: single_value(&mut tags, Tag::MusicBrainzReleaseId, song),
         recording_mbid: single_value(&mut tags, Tag::MusicBrainzRecordingId, song),
         track_mbid: single_value(&mut tags, Tag::MusicBrainzTrackId, song),
@@ -181,7 +191,7 @@ fn single_value(tags: &mut HashMap<Tag, Vec<String>>, tag: Tag, song: &str) -> O
 
         if v.len() > 1 {
             warn!(
-                song,
+                track = song,
                 ?tag,
                 values = ?v,
                 "multiple values for single-value tag, only sending the first"
@@ -274,6 +284,8 @@ struct TrackMetadata {
 struct AdditionalInfo {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     artist_mbids: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    artist_names: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     release_mbid: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
