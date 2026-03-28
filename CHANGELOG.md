@@ -1,3 +1,10 @@
+# 2.5.0 (2026-03-28)
+
+ - When a file is tagged with multiple artist values, send that list of separate artist names as additional info metadata ([#40](https://codeberg.org/elomatreb/listenbrainz-mpd/issues/40), requested by [alscaldas](https://codeberg.org/alscaldas)).
+   This is not yet utilized by the ListenBrainz server, but can be useful with other API-compatible software.
+ - When a file is tagged with multiple artists, concatenate the individual values (previously all but the first value would simply be skipped).
+ - Dependency updates.
+
 # 2.4.0 (2026-02-27)
 
 - Linux only: Add support for connecting via abstract sockets, prefixed with `@` ([#42](https://codeberg.org/elomatreb/listenbrainz-mpd/pulls/42), by [Kladky](https://codeberg.org/Kladky)).
