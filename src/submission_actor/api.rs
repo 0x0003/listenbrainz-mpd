@@ -149,8 +149,7 @@ fn metadata_from_song(config: &Configuration, song: Song) -> Option<TrackMetadat
         warn!(track = song, "cannot submit track without artist tag");
         return None;
     };
-    assert_ne!(artist_names.len(), 0);
-    let artist_name = artist_names.join(" & ");
+    let artist_name = concat_artists(&artist_names);
 
     // The release is optional
     let release_name = single_value(&mut tags, Tag::Album, song);
@@ -201,6 +200,23 @@ fn single_value(tags: &mut HashMap<Tag, Vec<String>>, tag: Tag, song: &str) -> O
         Some(v.remove(0))
     } else {
         None
+    }
+}
+
+/// Concatenate a list of individual artist names into a single value using the
+/// default Musicbrainz separators.
+fn concat_artists(artists: &[String]) -> String {
+    use std::fmt::Write;
+    match artists {
+        [] => panic!("invalid artist credit"),
+        [artist] => artist.to_owned(),
+        [head @ .., last] => {
+            // If there is more than one artist, the final two artists are separated by an
+            // ampersand, while all others preceding that are separated by commas
+            let mut out = head.join(", ");
+            write!(out, " & {last}").unwrap();
+            out
+        }
     }
 }
 
