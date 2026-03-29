@@ -82,7 +82,7 @@ async fn main() -> Result<()> {
 
     #[cfg(feature = "systemd")]
     {
-        let _ = sd_notify::notify(false, &[sd_notify::NotifyState::Stopping]);
+        let _ = sd_notify::notify(&[sd_notify::NotifyState::Stopping]);
     }
 
     // Wait for actors to exit
@@ -228,7 +228,7 @@ async fn run(
     };
 
     #[cfg(feature = "systemd")]
-    let _ = sd_notify::notify(false, &[sd_notify::NotifyState::Ready]);
+    let _ = sd_notify::notify(&[sd_notify::NotifyState::Ready]);
 
     // Send initial now_playing if we start while a song is playing
     if let Some(song) = &state.song
@@ -246,13 +246,10 @@ async fn run(
 
     loop {
         #[cfg(feature = "systemd")]
-        let _ = sd_notify::notify(
-            false,
-            &[sd_notify::NotifyState::Status(&format!(
-                "Watching for listens; {} completed",
-                state.completed_listens
-            ))],
-        );
+        let _ = sd_notify::notify(&[sd_notify::NotifyState::Status(&format!(
+            "Watching for listens; {} completed",
+            state.completed_listens
+        ))]);
 
         tokio::select! {
             event = connection_events.next() => {
