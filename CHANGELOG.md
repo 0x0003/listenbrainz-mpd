@@ -1,3 +1,7 @@
+# 2.5.1 (2026-03-30)
+
+ - Fix compilation error when building with the `systemd` feature ([#44](https://codeberg.org/elomatreb/listenbrainz-mpd/pulls/44), thanks to [Kladky](https://codeberg.org/Kladky)).
+
 # 2.5.0 (2026-03-28)
 
  - When a file is tagged with multiple artist values, send that list of separate artist names as additional info metadata ([#40](https://codeberg.org/elomatreb/listenbrainz-mpd/issues/40), requested by [alscaldas](https://codeberg.org/alscaldas)).
