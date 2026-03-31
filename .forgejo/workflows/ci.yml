@@ -1,0 +1,34 @@
+name: "CI"
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-check:
+    runs-on: "codeberg-small"
+    steps:
+      - name: "checkout"
+        uses: "https://data.forgejo.org/actions/checkout@v6"
+      - name: "Install rustup"
+        run: |
+          curl --proto '=https' --tlsv1.2 --retry 10 --retry-connrefused -fsSL "https://sh.rustup.rs" | sh -s -- --default-toolchain none -y
+          echo $HOME/.cargo/bin >> $FORGEJO_PATH
+      - name: "Install Rust toolchain"
+        run: "rustup toolchain install stable --profile minimal && rustup default stable"
+      - name: "Build"
+        run: "cargo check -j 2 --all-features"
+
+  format-check:
+    runs-on: "codeberg-tiny"
+    steps:
+      - name: "checkout"
+        uses: "https://data.forgejo.org/actions/checkout@v6"
+      - name: "Install rustup"
+        run: |
+          curl --proto '=https' --tlsv1.2 --retry 10 --retry-connrefused -fsSL "https://sh.rustup.rs" | sh -s -- --default-toolchain none -y
+          echo $HOME/.cargo/bin >> $FORGEJO_PATH
+      - name: "Install Rust toolchain"
+        run: "rustup toolchain install nightly --profile minimal --component rustfmt && rustup default nightly"
+      - name: "Check formatting"
+        run: "cargo fmt --check"
