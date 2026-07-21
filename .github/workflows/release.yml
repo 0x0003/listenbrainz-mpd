@@ -1,0 +1,90 @@
+name: Sync & Release
+
+
+on:
+  schedule:
+    - cron: "0 0 * * 1"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Specific tag to release (e.g. v2.5.1). Leave empty to auto-detect latest."
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Add upstream
+        run: git remote add upstream https://codeberg.org/elomatreb/listenbrainz-mpd.git || true
+
+      - name: Fetch upstream
+        run: git fetch upstream
+
+      - name: Push branches
+        run: git push origin upstream/main:main --force
+
+      - name: Push tags
+        run: git push origin --tags --force
+
+  release:
+    needs: sync
+    runs-on: windows-latest
+    steps:
+      - name: Determine tag
+        id: tag
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.tag }}" ]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            TAG=$(curl -fsSL https://codeberg.org/api/v1/repos/elomatreb/listenbrainz-mpd/releases/latest | jq -r '.tag_name')
+            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check if release exists
+        id: check
+        shell: bash
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/$TAG")
+          if [ "$HTTP_CODE" = "404" ]; then
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.check.outputs.new == 'true'
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.check.outputs.new == 'true'
+
+      - name: Build
+        if: steps.check.outputs.new == 'true'
+        run: cargo build --release --features rusqlite/bundled
+
+      - name: Package
+        if: steps.check.outputs.new == 'true'
+        shell: pwsh
+        run: |
+          $tag = "${{ steps.tag.outputs.tag }}"
+          Compress-Archive `
+            -Path "target/release/listenbrainz-mpd.exe" `
+            -DestinationPath "listenbrainz-mpd-${tag}-windows-x86_64.zip"
+
+      - name: Create release
+        if: steps.check.outputs.new == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "${{ steps.tag.outputs.tag }}" --repo "${{ github.repository }}" --title "${{ steps.tag.outputs.tag }}" --generate-notes "listenbrainz-mpd-${{ steps.tag.outputs.tag }}-windows-x86_64.zip"
