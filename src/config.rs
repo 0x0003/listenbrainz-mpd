@@ -1,5 +1,8 @@
 #[cfg(unix)]
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+use std::os::unix::{
+    fs::{DirBuilderExt, OpenOptionsExt},
+    net::SocketAddr as StdSocketAddr,
+};
 use std::{
     env,
     fs::{self, File},
@@ -9,6 +12,8 @@ use std::{
 
 use anyhow::{Context, Error, Result, anyhow, bail};
 use serde::Deserialize;
+#[cfg(unix)]
+use tokio::net::unix;
 use tracing::debug;
 
 /// The default configuration file.
@@ -22,9 +27,7 @@ pub struct Configuration {
     /// The submission API URL (without a trailing slash)
     pub api_url: String,
     /// The MPD host
-    pub mpd_host: String,
-    /// The MPD port
-    pub mpd_port: u16,
+    pub mpd_address: MpdAddress,
     /// The MPD server password
     pub mpd_password: Option<String>,
     /// Whether to enable caching failed submissions
@@ -35,6 +38,16 @@ pub struct Configuration {
     pub genre_separator: Option<char>,
     /// Path to the file used for caching listens
     pub cache_file: Option<PathBuf>,
+}
+
+#[derive(Debug)]
+pub enum MpdAddress {
+    Tcp {
+        host: String,
+        port: u16,
+    },
+    #[cfg(unix)]
+    Unix(unix::SocketAddr),
 }
 
 fn default_path() -> PathBuf {
@@ -167,17 +180,49 @@ pub fn load(path: Option<PathBuf>) -> Result<Configuration> {
         6600
     };
 
-    let mpd_host = match config.mpd.address {
+    let mpd_address = match config.mpd.address {
         Some(host) if host.is_empty() => bail!("MPD host cannot be empty"),
-        Some(host) => host,
-        None => String::from("localhost"),
+        // If the address starts with a slash, assume it's an absolute path to a Unix socket
+        #[cfg(unix)]
+        Some(host) if host.starts_with('/') => {
+            let addr = StdSocketAddr::from_pathname(&host)
+                .with_context(|| format!("Invalid Unix socket address: {host:?}"))?;
+            MpdAddress::Unix(addr.into())
+        }
+        #[cfg(not(unix))]
+        Some(host) if host.starts_with('/') => {
+            bail!("Unix sockets are not supported on this platform");
+        }
+        // If the address starts with an @, assume it's an abstract socket identifier (linux only).
+        // The @ is stripped and replace with a null byte behind the scenes.
+        #[cfg(target_os = "linux")]
+        Some(host) if let Some(ref host) = host.strip_prefix('@') => {
+            use std::os::linux::net::SocketAddrExt;
+            let addr = StdSocketAddr::from_abstract_name(host)
+                .with_context(|| format!("Invalid abstract socket address: {host:?}"))?;
+            MpdAddress::Unix(addr.into())
+        }
+        #[cfg(not(target_os = "linux"))]
+        Some(host) if host.starts_with('@') => {
+            bail!("Abstract sockets (starting with '@') are only supported on Linux");
+        }
+        // Otherwise assume it's just a regular hostname. If the hostname is malformed it will fail
+        // later during the connection attempt.
+        Some(host) => MpdAddress::Tcp {
+            host,
+            port: mpd_port,
+        },
+        // If no host is known at this point, assume localhost
+        None => MpdAddress::Tcp {
+            host: String::from("localhost"),
+            port: mpd_port,
+        },
     };
 
     Ok(Configuration {
         token,
         api_url,
-        mpd_host,
-        mpd_port,
+        mpd_address,
         mpd_password: config.mpd.password,
         enable_cache: config.submission.enable_cache,
         cache_file: config.submission.cache_file,

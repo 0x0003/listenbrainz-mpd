@@ -3,15 +3,13 @@ mod cli;
 mod config;
 mod submission_actor;
 
-#[cfg(unix)]
-use std::path::Path;
 use std::{
     cmp,
     pin::Pin,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use clap::Parser;
 use config::Configuration;
 use mpd_client::{
@@ -22,7 +20,7 @@ use mpd_client::{
 };
 use serde::{Serialize, Serializer};
 #[cfg(unix)]
-use tokio::net::UnixStream;
+use tokio::net::{UnixStream, unix::SocketAddr};
 use tokio::{
     net::TcpStream,
     signal::ctrl_c,
@@ -34,6 +32,7 @@ use tracing_subscriber::EnvFilter;
 use crate::{
     cache_actor::CacheActor,
     cli::{CliArgs, Feedback},
+    config::MpdAddress,
     submission_actor::SubmissionActor,
 };
 
@@ -106,46 +105,10 @@ async fn send_feedback(mpd_client: Client, feedback: Feedback) -> Result<()> {
 async fn connect(config: &Configuration) -> Result<(Client, ConnectionEvents)> {
     let password = config.mpd_password.as_deref();
 
-    // If the host value starts with a slash, assume it's a path to a Unix socket
-    let socket_path = if config.mpd_host.starts_with('/') {
-        Some(&config.mpd_host)
-    // If it starts with an @, it's an abstract socket
-    } else if let Some(abstract_socket) = config.mpd_host.strip_prefix('@') {
-        // The '@' character being used is just for convenience, as it's difficult and
-        // potentially confusing for most users to have to insert a null character. This
-        // is what MPD itself, and other clients like rmpc and mpdris2-rs do.
-        if cfg!(target_os = "linux") {
-            // TODO: Use `SocketAddrExt::from_abstract_name` instead of relying on this
-            // manual construction
-            Some(&format!("\0{abstract_socket}"))
-        } else {
-            bail!("Abstract sockets (starting with '@') are only supported on Linux");
-        }
-    } else {
-        None
-    };
-
-    if let Some(socket_path) = socket_path {
+    match &config.mpd_address {
+        MpdAddress::Tcp { host, port } => connect_tcp(host, *port, password).await,
         #[cfg(unix)]
-        {
-            connect_unix(Path::new(socket_path), password)
-                .await
-                .with_context(|| {
-                    format!("Failed to connect via Unix socket at {}", config.mpd_host)
-                })
-        }
-        #[cfg(not(unix))]
-        anyhow::bail!("Unix sockets not supported");
-    } else {
-        // Otherwise assume it's a hostname or bare IP address
-        connect_tcp(&config.mpd_host, config.mpd_port, password)
-            .await
-            .with_context(|| {
-                format!(
-                    "Failed to connect via TCP to {} port {}",
-                    config.mpd_host, config.mpd_port
-                )
-            })
+        MpdAddress::Unix(socket) => connect_unix(socket, password).await,
     }
 }
 
@@ -162,9 +125,12 @@ async fn connect_tcp(
 }
 
 #[cfg(unix)]
-async fn connect_unix(path: &Path, password: Option<&str>) -> Result<(Client, ConnectionEvents)> {
-    debug!(?path, "connecting via Unix socket");
-    let socket = UnixStream::connect(path).await?;
+async fn connect_unix(
+    socket: &SocketAddr,
+    password: Option<&str>,
+) -> Result<(Client, ConnectionEvents)> {
+    debug!(?socket, "connecting via Unix socket");
+    let socket = UnixStream::connect_addr(socket).await?;
     Client::connect_with_password_opt(socket, password)
         .await
         .map_err(Into::into)
