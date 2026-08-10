@@ -180,6 +180,7 @@ pub fn load(path: Option<PathBuf>) -> Result<Configuration> {
         6600
     };
 
+    // Determine the kind of MPD address
     let mpd_address = match config.mpd.address {
         Some(host) if host.is_empty() => bail!("MPD host cannot be empty"),
         // If the address starts with a slash, assume it's an absolute path to a Unix socket
@@ -196,7 +197,7 @@ pub fn load(path: Option<PathBuf>) -> Result<Configuration> {
         // If the address starts with an @, assume it's an abstract socket identifier (linux only).
         // The @ is stripped and replace with a null byte behind the scenes.
         #[cfg(target_os = "linux")]
-        Some(host) if let Some(ref host) = host.strip_prefix('@') => {
+        Some(ref host) if let Some(host) = host.strip_prefix('@') => {
             use std::os::linux::net::SocketAddrExt;
             let addr = StdSocketAddr::from_abstract_name(host)
                 .with_context(|| format!("Invalid abstract socket address: {host:?}"))?;
