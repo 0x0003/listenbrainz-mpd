@@ -93,7 +93,8 @@ pub fn load(path: Option<PathBuf>) -> Result<Configuration> {
         bail!("`mpd.password_file` cannot be set when `mpd.password` is also set");
     }
 
-    // The token can be specified using the LISTENBRAINZ_TOKEN environment variable
+    // The token can be specified using the LISTENBRAINZ_TOKEN environment variable,
+    // which takes precedence over the configuration file
     if let Some(token) = env_var("LISTENBRAINZ_TOKEN")? {
         debug!("found token in environment variable");
         config.submission.token = Some(token);
@@ -110,6 +111,12 @@ pub fn load(path: Option<PathBuf>) -> Result<Configuration> {
         })?;
         config.submission.token = Some(token.trim().to_owned());
     }
+
+    let token = match config.submission.token {
+        Some(token) if token.is_empty() => bail!("ListenBrainz token value cannot be empty"),
+        Some(token) => token,
+        None => bail!("Could not find ListenBrainz token in configuration or environment"),
+    };
 
     // Determine the MPD port from the configuration address string (but not the
     // MPD_HOST variable), the MPD_PORT environment variable, or fall back to the
@@ -165,12 +172,6 @@ pub fn load(path: Option<PathBuf>) -> Result<Configuration> {
         })?;
         config.mpd.password = Some(password.trim().to_owned());
     }
-
-    let token = match config.submission.token {
-        Some(token) if token.is_empty() => bail!("ListenBrainz token value cannot be empty"),
-        Some(token) => token,
-        None => bail!("Could not find ListenBrainz token in configuration or environment"),
-    };
 
     // Remove trailing slashes from configured API URL or fall back to default
     let api_url = if let Some(url) = config.submission.api_url {
@@ -341,6 +342,9 @@ struct RawMpdConfig {
 /// Load the value of the environment variable with the given name.
 fn env_var(name: &str) -> Result<Option<String>> {
     match env::var(name) {
+        Ok(value) if value.is_empty() => Err(anyhow!(
+            "Environment variable {name} must not be empty if set"
+        )),
         Ok(value) => Ok(Some(value)),
         Err(env::VarError::NotPresent) => Ok(None),
         Err(other) => Err(anyhow::Error::new(other)
