@@ -7,6 +7,8 @@ use std::{
     env,
     fs::{self, File},
     io::{self, ErrorKind, Write},
+    net::{SocketAddr, ToSocketAddrs},
+    num::NonZero,
     path::PathBuf,
 };
 
@@ -43,8 +45,8 @@ pub struct Configuration {
 #[derive(Debug)]
 pub enum MpdAddress {
     Tcp {
-        host: String,
-        port: u16,
+        raw_address: String,
+        resolved: Vec<SocketAddr>,
     },
     #[cfg(unix)]
     Unix(unix::SocketAddr),
@@ -121,24 +123,24 @@ pub fn load(path: Option<PathBuf>) -> Result<Configuration> {
     // Determine the MPD port from the configuration address string (but not the
     // MPD_HOST variable), the MPD_PORT environment variable, or fall back to the
     // default port
-    let mpd_port = if let Some(port) = env_var("MPD_PORT")? {
-        debug!("found MPD_PORT environment variable");
-        port.parse()
-            .with_context(|| format!("Invalid MPD_PORT value: {port:?}"))?
-    } else if let Some((h, p)) = config.mpd.address.as_deref().and_then(split_address_port) {
-        let port = p
-            .parse()
-            .with_context(|| format!("Invalid port in `mpd.address`: {p:?}"))?;
+    // let mpd_port = if let Some(port) = env_var("MPD_PORT")? {
+    //     debug!("found MPD_PORT environment variable");
+    //     port.parse()
+    //         .with_context(|| format!("Invalid MPD_PORT value: {port:?}"))?
+    // } else if let Some((h, p)) =
+    // config.mpd.address.as_deref().and_then(split_address_port) {     let port
+    // = p         .parse()
+    //         .with_context(|| format!("Invalid port in `mpd.address`: {p:?}"))?;
 
-        // Remove the port from the host string
-        let host_len = h.len();
-        config.mpd.address.as_mut().unwrap().truncate(host_len);
+    //     // Remove the port from the host string
+    //     let host_len = h.len();
+    //     config.mpd.address.as_mut().unwrap().truncate(host_len);
 
-        port
-    } else {
-        // Default port
-        6600
-    };
+    //     port
+    // } else {
+    //     // Default port
+    //     6600u16
+    // };
 
     // Determine the host and optionally the connection password from the MPD_HOST
     // environment variable (syntax compatible with mpc)
@@ -185,44 +187,57 @@ pub fn load(path: Option<PathBuf>) -> Result<Configuration> {
         String::from("https://api.listenbrainz.org")
     };
 
+    // If the address isn't set at this point, assume default
+    let host = config
+        .mpd
+        .address
+        .unwrap_or_else(|| String::from("localhost"));
+
+    // Parse the MPD_PORT environment variable, which may override the port from the
+    // configuration
+    let mpd_port = env_var("MPD_PORT")?
+        .map(|p| {
+            p.parse::<NonZero<u16>>()
+                .with_context(|| format!("Invalid MPD_PORT value: {p:?}"))
+        })
+        .transpose()?;
+
     // Determine the kind of MPD address
-    let mpd_address = match config.mpd.address {
-        Some(host) if host.is_empty() => bail!("MPD host cannot be empty"),
-        // If the address starts with a slash, assume it's an absolute path to a Unix socket
-        #[cfg(unix)]
-        Some(host) if host.starts_with('/') => {
-            let addr = StdSocketAddr::from_pathname(&host)
-                .with_context(|| format!("Invalid Unix socket address: {host:?}"))?;
-            MpdAddress::Unix(addr.into())
+    let mpd_address = if host.starts_with('/') {
+        // Unix socket
+        cfg_select! {
+            unix => {
+                let addr = StdSocketAddr::from_pathname(&host)
+                    .with_context(|| format!("Invalid Unix socket address: {host:?}"))?;
+                MpdAddress::Unix(addr.into())
+            }
+            _ => bail!("Unix sockets are not supported on this platform"),
         }
-        #[cfg(not(unix))]
-        Some(host) if host.starts_with('/') => {
-            bail!("Unix sockets are not supported on this platform");
+    } else if host.starts_with('@') {
+        // Abstract unix socket
+        cfg_select! {
+            target_os = "linux" => {
+                use std::os::linux::net::SocketAddrExt;
+                let addr = StdSocketAddr::from_abstract_name(&host[1..])
+                    .with_context(|| format!("Invalid abstract socket address: {host:?}"))?;
+                MpdAddress::Unix(addr.into())
+            }
+            _ => bail!("Abstract sockets (starting with '@') are only supported on Linux"),
         }
-        // If the address starts with an @, assume it's an abstract socket identifier (linux only).
-        // The @ is stripped and replace with a null byte behind the scenes.
-        #[cfg(target_os = "linux")]
-        Some(ref host) if let Some(host) = host.strip_prefix('@') => {
-            use std::os::linux::net::SocketAddrExt;
-            let addr = StdSocketAddr::from_abstract_name(host)
-                .with_context(|| format!("Invalid abstract socket address: {host:?}"))?;
-            MpdAddress::Unix(addr.into())
+    } else {
+        // TCP, as a hostname or bare IP address
+        let mut resolved = resolve_mpd_host(&host)
+            .with_context(|| format!("Failed to parse or resolve hostname: {host:?}"))?;
+
+        // Override the port from the config with the env var if set
+        if let Some(p) = mpd_port.map(NonZero::get) {
+            resolved.iter_mut().for_each(|addr| addr.set_port(p));
         }
-        #[cfg(not(target_os = "linux"))]
-        Some(host) if host.starts_with('@') => {
-            bail!("Abstract sockets (starting with '@') are only supported on Linux");
+
+        MpdAddress::Tcp {
+            raw_address: host,
+            resolved,
         }
-        // Otherwise assume it's just a regular hostname. If the hostname is malformed it will fail
-        // later during the connection attempt.
-        Some(host) => MpdAddress::Tcp {
-            host,
-            port: mpd_port,
-        },
-        // If no host is known at this point, assume localhost
-        None => MpdAddress::Tcp {
-            host: String::from("localhost"),
-            port: mpd_port,
-        },
     };
 
     Ok(Configuration {
@@ -237,15 +252,22 @@ pub fn load(path: Option<PathBuf>) -> Result<Configuration> {
     })
 }
 
-/// Parse the port from an address string of the form `address:port`. Returns
-/// the host portion and the port portion if found, None otherwise.
-fn split_address_port(address: &str) -> Option<(&str, &str)> {
-    if address.starts_with('/') || address.starts_with('@') {
-        // Unix socket path, don't attempt to parse
-        return None;
+fn resolve_mpd_host(host: &str) -> Result<Vec<SocketAddr>> {
+    // Try to parse the host, first as an IP address or hostname without a port or,
+    // if that fails, as an IP address or hostname with a port included
+    let res = (host, 6600)
+        .to_socket_addrs()
+        .or_else(|error| {
+            debug!(%error, "failed to resolve as address without port");
+            host.to_socket_addrs()
+        })?
+        .collect::<Vec<_>>();
+
+    if res.is_empty() {
+        bail!("Could not resolve to any address");
     }
 
-    address.rsplit_once(':')
+    Ok(res)
 }
 
 pub fn create_default_config() -> Result<()> {

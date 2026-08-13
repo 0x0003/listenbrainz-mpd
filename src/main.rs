@@ -5,6 +5,7 @@ mod submission_actor;
 
 use std::{
     cmp,
+    net::SocketAddr,
     pin::Pin,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -20,7 +21,7 @@ use mpd_client::{
 };
 use serde::{Serialize, Serializer};
 #[cfg(unix)]
-use tokio::net::{UnixStream, unix::SocketAddr};
+use tokio::net::{UnixStream, unix::SocketAddr as UnixSocketAddr};
 use tokio::{
     net::TcpStream,
     signal::ctrl_c,
@@ -106,9 +107,12 @@ async fn connect(config: &Configuration) -> Result<(Client, ConnectionEvents)> {
     let password = config.mpd_password.as_deref();
 
     match &config.mpd_address {
-        MpdAddress::Tcp { host, port } => connect_tcp(host, *port, password)
+        MpdAddress::Tcp {
+            raw_address,
+            resolved,
+        } => connect_tcp(resolved, password)
             .await
-            .with_context(|| format!("Failed to connect to {host}:{port} via TCP")),
+            .with_context(|| format!("Failed to connect to {raw_address:?} via TCP")),
         #[cfg(unix)]
         MpdAddress::Unix(socket) => connect_unix(socket, password)
             .await
@@ -117,12 +121,13 @@ async fn connect(config: &Configuration) -> Result<(Client, ConnectionEvents)> {
 }
 
 async fn connect_tcp(
-    host: &str,
-    port: u16,
+    addrs: &[SocketAddr],
     password: Option<&str>,
 ) -> Result<(Client, ConnectionEvents)> {
-    debug!(?host, port, "connecting via TCP");
-    let socket = TcpStream::connect((host, port)).await?;
+    assert_ne!(addrs.len(), 0);
+    debug!(?addrs, "connecting via TCP");
+
+    let socket = TcpStream::connect(addrs).await?;
     Client::connect_with_password_opt(socket, password)
         .await
         .map_err(Into::into)
@@ -130,7 +135,7 @@ async fn connect_tcp(
 
 #[cfg(unix)]
 async fn connect_unix(
-    socket: &SocketAddr,
+    socket: &UnixSocketAddr,
     password: Option<&str>,
 ) -> Result<(Client, ConnectionEvents)> {
     debug!(?socket, "connecting via Unix socket");

@@ -50,9 +50,17 @@ token = ""
 [mpd]
 # Address of the MPD server.
 # This may be an IP address or a hostname. If no port is specified, port 6600 is assumed.
+# IPv6 addresses need to be enclosed in square brackets to specify a port.
 # If the value starts with a slash ("/"), it specifies a path to a Unix socket instead.
 # If the value starts with an at ("@"), it specifies the name of an abstract socket (Linux only).
-#address = "localhost:6600"
+# Examples:
+#address = "localhost"
+#address = "mpd.example.com:6601"
+#address = "127.0.0.1:1234"
+#address = "::1"
+#address = "[fe80::1%1]:6600"
+#address = "/run/user/1000/mpd"
+#address = "@mpd"
 
 # MPD server password.
 # Defaults to no password.
