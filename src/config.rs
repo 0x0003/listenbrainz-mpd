@@ -111,8 +111,30 @@ pub fn load(path: Option<PathBuf>) -> Result<Configuration> {
         config.submission.token = Some(token.trim().to_owned());
     }
 
-    // The MPD address and password can be specified in the MPD_HOST and MPD_PORT
-    // environment variables (compatible with tools like MPC)
+    // Determine the MPD port from the configuration address string (but not the
+    // MPD_HOST variable), the MPD_PORT environment variable, or fall back to the
+    // default port
+    let mpd_port = if let Some(port) = env_var("MPD_PORT")? {
+        debug!("found MPD_PORT environment variable");
+        port.parse()
+            .with_context(|| format!("Invalid MPD_PORT value: {port:?}"))?
+    } else if let Some((h, p)) = config.mpd.address.as_deref().and_then(split_address_port) {
+        let port = p
+            .parse()
+            .with_context(|| format!("Invalid port in `mpd.address`: {p:?}"))?;
+
+        // Remove the port from the host string
+        let host_len = h.len();
+        config.mpd.address.as_mut().unwrap().truncate(host_len);
+
+        port
+    } else {
+        // Default port
+        6600
+    };
+
+    // Determine the host and optionally the connection password from the MPD_HOST
+    // environment variable (syntax compatible with mpc)
     if let Some(mpd_host) = env_var("MPD_HOST")? {
         // The syntax of the value is `password@host`, with the password part
         // optional. Note that if an abstract socket is being used (linux only), the
@@ -160,24 +182,6 @@ pub fn load(path: Option<PathBuf>) -> Result<Configuration> {
         url.to_owned()
     } else {
         String::from("https://api.listenbrainz.org")
-    };
-
-    // Determine the MPD port from either the configuration address string or the
-    // MPD_PORT environment variable, or fall back to the default port
-    let mpd_port = if let Some(port) = env_var("MPD_PORT")? {
-        debug!("found MPD_PORT environment variable");
-        port.parse()
-            .with_context(|| format!("Invalid MPD_PORT value: {port:?}"))?
-    } else if let Some((h, p)) = config.mpd.address.as_deref().and_then(split_address_port) {
-        let port = p
-            .parse()
-            .with_context(|| format!("Invalid port in `mpd.address`: {p:?}"))?;
-        // Remove the port from the host string
-        config.mpd.address = Some(h.to_owned());
-        port
-    } else {
-        // Default port
-        6600
     };
 
     // Determine the kind of MPD address
