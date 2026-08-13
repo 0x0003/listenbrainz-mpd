@@ -106,9 +106,13 @@ async fn connect(config: &Configuration) -> Result<(Client, ConnectionEvents)> {
     let password = config.mpd_password.as_deref();
 
     match &config.mpd_address {
-        MpdAddress::Tcp { host, port } => connect_tcp(host, *port, password).await,
+        MpdAddress::Tcp { host, port } => connect_tcp(host, *port, password)
+            .await
+            .with_context(|| format!("Failed to connect to {host}:{port} via TCP")),
         #[cfg(unix)]
-        MpdAddress::Unix(socket) => connect_unix(socket, password).await,
+        MpdAddress::Unix(socket) => connect_unix(socket, password)
+            .await
+            .with_context(|| format!("Failed to connect to Unix socket at {socket:?}")),
     }
 }
 
