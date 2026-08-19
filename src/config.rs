@@ -16,7 +16,7 @@ use anyhow::{Context, Error, Result, anyhow, bail};
 use serde::Deserialize;
 #[cfg(unix)]
 use tokio::net::unix;
-use tracing::debug;
+use tracing::{debug, trace};
 
 /// The default configuration file.
 pub const DEFAULT: &[u8] = include_str!("../config.toml.sample").as_bytes();
@@ -120,23 +120,43 @@ pub fn load(path: Option<PathBuf>) -> Result<Configuration> {
         None => bail!("Could not find ListenBrainz token in configuration or environment"),
     };
 
-    // Determine the host and optionally the connection password from the MPD_HOST
-    // environment variable (syntax compatible with mpc)
-    if let Some(mpd_host) = env_var("MPD_HOST")? {
-        // The syntax of the value is `password@host`, with the password part
-        // optional. Note that if an abstract socket is being used (linux only), the
-        // format will be `password@@abstract_socket`.
-        if let Some((password, host)) = mpd_host.split_once('@')
+    // Remove trailing slashes from configured API URL or fall back to default
+    let api_url = if let Some(url) = config.submission.api_url {
+        let url = url.trim_end_matches('/');
+        if url.is_empty() {
+            bail!("`submission.api_url` cannot be empty");
+        }
+
+        url.to_owned()
+    } else {
+        String::from("https://api.listenbrainz.org")
+    };
+
+    // Keep track of where the host/address value is from
+    let (address, address_from_config) = if let Some(mut host) = env_var("MPD_HOST")? {
+        // The env var host can optionally contain the server password in the format
+        // `password@host`. This value needs to be distinguished from an abstract Unix
+        // socket address (linux only).
+        if let Some((password, rem)) = host.split_once('@')
             && !password.is_empty()
         {
             debug!("found MPD_HOST environment variable with host and password");
-            config.mpd.address = Some(host.to_owned());
             config.mpd.password = Some(password.to_owned());
+            host = rem.to_owned();
         } else {
             debug!("found MPD_HOST environment variable with only host");
-            config.mpd.address = Some(mpd_host);
         }
-    }
+
+        (host, false)
+    } else {
+        (
+            config
+                .mpd
+                .address
+                .unwrap_or_else(|| String::from("localhost")),
+            true,
+        )
+    };
 
     // Read `mpd.password_file` if the password isn't known at this point
     if let (None, Some(password_file)) = (&config.mpd.password, config.mpd.password_file) {
@@ -153,24 +173,6 @@ pub fn load(path: Option<PathBuf>) -> Result<Configuration> {
         config.mpd.password = Some(password.trim().to_owned());
     }
 
-    // Remove trailing slashes from configured API URL or fall back to default
-    let api_url = if let Some(url) = config.submission.api_url {
-        let url = url.trim_end_matches('/');
-        if url.is_empty() {
-            bail!("`submission.api_url` cannot be empty");
-        }
-
-        url.to_owned()
-    } else {
-        String::from("https://api.listenbrainz.org")
-    };
-
-    // If the address isn't set at this point, assume default
-    let host = config
-        .mpd
-        .address
-        .unwrap_or_else(|| String::from("localhost"));
-
     // Parse the MPD_PORT environment variable, which may override the port from the
     // configuration
     let mpd_port = env_var("MPD_PORT")?
@@ -181,31 +183,62 @@ pub fn load(path: Option<PathBuf>) -> Result<Configuration> {
         .transpose()?;
 
     // Determine the kind of MPD address
-    let mpd_address = if host.starts_with('/') {
+    let mpd_address = if address.starts_with('/') {
         // Unix socket
         cfg_select! {
             unix => {
-                let addr = StdSocketAddr::from_pathname(&host)
-                    .with_context(|| format!("Invalid Unix socket address: {host:?}"))?;
+                let addr = StdSocketAddr::from_pathname(&address)
+                    .with_context(|| format!("Invalid Unix socket address: {address:?}"))?;
                 MpdAddress::Unix(addr.into())
             }
             _ => bail!("Unix sockets are not supported on this platform"),
         }
-    } else if host.starts_with('@') {
+    } else if address.starts_with('@') {
         // Abstract unix socket
         cfg_select! {
             target_os = "linux" => {
                 use std::os::linux::net::SocketAddrExt;
-                let addr = StdSocketAddr::from_abstract_name(&host[1..])
-                    .with_context(|| format!("Invalid abstract socket address: {host:?}"))?;
+                let addr = StdSocketAddr::from_abstract_name(&address[1..])
+                    .with_context(|| format!("Invalid abstract socket address: {address:?}"))?;
                 MpdAddress::Unix(addr.into())
             }
             _ => bail!("Abstract sockets (starting with '@') are only supported on Linux"),
         }
     } else {
         // TCP, as a hostname or bare IP address
-        let mut resolved = resolve_mpd_host(&host)
-            .with_context(|| format!("Failed to parse or resolve hostname: {host:?}"))?;
+        debug!(?address, "resolving TCP address");
+        let mut resolved;
+
+        'resolve: {
+            if address_from_config {
+                // In the config file, the address value may optionally contain the
+                // port
+                match address.to_socket_addrs() {
+                    Ok(addrs) => {
+                        trace!(?addrs, "resolved with included port");
+                        resolved = addrs.collect::<Vec<_>>();
+                        break 'resolve;
+                    }
+                    Err(error) => debug!(
+                        ?error,
+                        "failed to parse/resolve as address with included port, falling back"
+                    ),
+                }
+            }
+
+            // Try to parse/resolve without included port
+            match (&*address, mpd_port.map_or(6600, NonZero::get)).to_socket_addrs() {
+                Ok(addrs) => {
+                    trace!(?addrs, "resolved without included port");
+                    resolved = addrs.collect::<Vec<_>>();
+                }
+                Err(e) => return Err(e).with_context(|| format!("Failed to resolve {address:?}")),
+            }
+        }
+
+        if resolved.is_empty() {
+            bail!("Name resolution returned empty result for {address:?}");
+        }
 
         // Override the port from the config with the env var if set
         if let Some(p) = mpd_port.map(NonZero::get) {
@@ -213,7 +246,7 @@ pub fn load(path: Option<PathBuf>) -> Result<Configuration> {
         }
 
         MpdAddress::Tcp {
-            raw_address: host,
+            raw_address: address,
             resolved,
         }
     };
@@ -228,24 +261,6 @@ pub fn load(path: Option<PathBuf>) -> Result<Configuration> {
         submit_genres_as_folksonomy: config.submission.genres_as_folksonomy,
         genre_separator: config.submission.genre_separator,
     })
-}
-
-fn resolve_mpd_host(host: &str) -> Result<Vec<SocketAddr>> {
-    // Try to parse the host, first as an IP address or hostname without a port or,
-    // if that fails, as an IP address or hostname with a port included
-    let res = (host, 6600)
-        .to_socket_addrs()
-        .or_else(|error| {
-            debug!(%error, "failed to resolve as address without port");
-            host.to_socket_addrs()
-        })?
-        .collect::<Vec<_>>();
-
-    if res.is_empty() {
-        bail!("Could not resolve to any address");
-    }
-
-    Ok(res)
 }
 
 pub fn create_default_config() -> Result<()> {
