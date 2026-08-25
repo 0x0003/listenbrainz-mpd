@@ -1,3 +1,13 @@
+# 2.6.0 (2026-08-25)
+
+ - **Potentially breaking change**: Change the behavior of the `MPD_HOST` environment variable to match the behavior of mpc.
+   Passing a port as part of the value of `MPD_HOST` worked by accident, but this was not intentional.
+   When configuring via environment variables, set the port in `MPD_PORT`.
+ - Fix missing user agent header on Listenbrainz API requests (#[47](https://codeberg.org/elomatreb/listenbrainz-mpd/pulls/47), thanks to [phw](https://codeberg.org/phw)).
+   This may help with the listenbrainz.org server blocking requests for bot protection reasons.
+ - Fix being unable to use IPv6 addresses as the MPD host due to a parsing bug.
+ - Dependency updates.
+
 # 2.5.1 (2026-03-30)
 
  - Fix compilation error when building with the `systemd` feature ([#44](https://codeberg.org/elomatreb/listenbrainz-mpd/pulls/44), thanks to [Kladky](https://codeberg.org/Kladky)).
