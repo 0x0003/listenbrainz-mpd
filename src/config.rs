@@ -193,16 +193,19 @@ pub fn load(path: Option<PathBuf>) -> Result<Configuration> {
             }
             _ => bail!("Unix sockets are not supported on this platform"),
         }
-    } else if address.starts_with('@') {
+    } else if let Some(addr) = address.strip_prefix('@') {
         // Abstract unix socket
         cfg_select! {
             target_os = "linux" => {
                 use std::os::linux::net::SocketAddrExt;
-                let addr = StdSocketAddr::from_abstract_name(&address[1..])
+                let addr = StdSocketAddr::from_abstract_name(addr)
                     .with_context(|| format!("Invalid abstract socket address: {address:?}"))?;
                 MpdAddress::Unix(addr.into())
             }
-            _ => bail!("Abstract sockets (starting with '@') are only supported on Linux"),
+            _ => {
+                let _ = addr;
+                bail!("Abstract sockets (starting with '@') are only supported on Linux");
+            }
         }
     } else {
         // TCP, as a hostname or bare IP address
