@@ -126,6 +126,16 @@ fn build_http_client(configuration: &Configuration) -> Client {
             .expect("failed to create Authorization header"),
     );
     headers.insert(header::ACCEPT, HeaderValue::from_static("application/json"));
+    headers.insert(
+        header::USER_AGENT,
+        HeaderValue::from_str(&format!(
+            "{}/{} ({})",
+            env!("CARGO_PKG_NAME"),
+            env!("CARGO_PKG_VERSION"),
+            env!("CARGO_PKG_REPOSITORY")
+        ))
+        .expect("failed to create User-Agent header"),
+    );
 
     reqwest::ClientBuilder::new()
         .timeout(Duration::from_secs(30))
